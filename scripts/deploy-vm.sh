@@ -94,13 +94,26 @@ fi
 sudo systemctl restart ticketbot-backend ticketbot-frontend nginx
 systemctl is-active ticketbot-backend ticketbot-frontend nginx
 
-DASHBOARD_CODE="$(curl -s -o /tmp/ticketbot-dashboard.html -w '%{http_code}' http://127.0.0.1:8001/dashboard)"
-if [ "$DASHBOARD_CODE" != "200" ]; then
-  echo "Error: dashboard check failed with status $DASHBOARD_CODE" >&2
+READY=0
+for ATTEMPT in $(seq 1 30); do
+  DASHBOARD_CODE="$(curl -s -o /tmp/ticketbot-dashboard.html -w '%{http_code}' http://127.0.0.1:8001/dashboard || true)"
+  HEALTH_RESPONSE="$(curl -s http://127.0.0.1:8001/api/proxy/health || true)"
+
+  if [ "$DASHBOARD_CODE" = "200" ] && printf '%s' "$HEALTH_RESPONSE" | grep -q '"status":"ok"'; then
+    printf '%s' "$HEALTH_RESPONSE" >/tmp/ticketbot-health.json
+    READY=1
+    break
+  fi
+
+  sleep 1
+done
+
+if [ "$READY" -ne 1 ]; then
+  echo "Error: service did not become healthy in time." >&2
+  echo "Last dashboard status: $DASHBOARD_CODE" >&2
   exit 1
 fi
 
-curl -fsS http://127.0.0.1:8001/api/proxy/health >/tmp/ticketbot-health.json
 echo "VM health: $(cat /tmp/ticketbot-health.json)"
 EOF
 )
