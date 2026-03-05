@@ -82,14 +82,19 @@ router.get('/upcoming-opportunities', (req, res) => {
   const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, 100)
     : 18;
+  const requestedUpcomingWindow = Number(req.query.upcoming_window || 7);
+  const upcomingWindowDays = Number.isFinite(requestedUpcomingWindow) && requestedUpcomingWindow > 0
+    ? Math.min(requestedUpcomingWindow, 365)
+    : 7;
   const minRoi = Number(req.query.min_roi);
   const minConfidence = minimumScoreFromConfidence(req.query.min_confidence);
   const filters = [
     'on_sale_date IS NOT NULL',
+    "date(date) >= date('now')",
     "date(on_sale_date) >= date('now')",
-    "date(on_sale_date) <= date('now', '+30 days')",
+    "date(on_sale_date) <= date('now', ?)",
   ];
-  const params = [];
+  const params = [`+${upcomingWindowDays} days`];
 
   pushOptionalFilter(filters, params, "lower(COALESCE(category, 'other')) = ?", req.query.category, (value) => String(value).toLowerCase());
   pushOptionalFilter(filters, params, "lower(COALESCE(league, '')) = ?", req.query.league, (value) => String(value).toLowerCase());

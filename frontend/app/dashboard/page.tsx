@@ -70,7 +70,7 @@ export default function Dashboard() {
   const topRoiEvent = roiRanked[0];
 
   useEffect(() => {
-    Promise.all([getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE }), getMarketHeatmap()])
+    Promise.all([getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE, upcoming_window: "7" }), getMarketHeatmap()])
       .then(async ([upcomingResponse, h]) => {
         const typedUpcoming = upcomingResponse as UpcomingResponse;
         const typedHeatmap = h as HeatmapData;
@@ -108,8 +108,9 @@ export default function Dashboard() {
     setSyncMessage("");
     try {
       const summary = await syncLiveData({
+        force: true,
         ttl_minutes: 30,
-        max_pages: 12,
+        max_pages: 5,
         days_ahead: 60,
         categories: ["concerts", "sports", "theater", "comedy", "family"],
       }) as {
@@ -135,7 +136,7 @@ export default function Dashboard() {
       } else if (!summary.cached) {
         setSyncMessage(providerErrors[0] || "No live events were synced");
       }
-      const refreshed = await getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE });
+      const refreshed = await getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE, upcoming_window: "7" });
       const typed = refreshed as UpcomingResponse;
       setUpcoming(typed.opportunities || []);
       setWindowStats(typed.windows || { window_7d: 0, window_14d: 0, window_30d: 0 });

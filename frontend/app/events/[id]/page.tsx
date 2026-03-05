@@ -87,15 +87,25 @@ export default function EventDetailPage() {
         </div>
       </div>
 
-      {/* Price overview card */}
-      <div className="flex justify-end -mt-8 mr-4 relative z-10">
-        <Card className="glow-card shadow-xl">
-          <CardContent className="p-4 text-center">
-            <p className="text-sm text-muted-foreground">Face Value</p>
-            <p className="text-xl font-bold">${event.face_value}</p>
-            <Separator className="my-2" />
-            <p className="text-sm text-muted-foreground">Resale Range</p>
-            <p className="text-xl font-bold text-green-600">${event.min_price} - ${event.max_price}</p>
+      {/* Price overview row */}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Face Value</p>
+            <p className="text-2xl font-bold mt-1">${event.face_value}</p>
+          </CardContent>
+        </Card>
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Expected Entry Range</p>
+            <p className="text-2xl font-bold mt-1">${event.min_price}</p>
+            <p className="text-xs text-muted-foreground mt-1">Current low ask estimate</p>
+          </CardContent>
+        </Card>
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Expected Resale Range</p>
+            <p className="text-2xl font-bold text-green-600 mt-1">${event.min_price} - ${event.max_price}</p>
             <p className="text-xs text-green-500 mt-1 font-semibold">+{event.resale_potential}% potential ROI</p>
           </CardContent>
         </Card>

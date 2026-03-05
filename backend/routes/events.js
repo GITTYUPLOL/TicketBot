@@ -173,7 +173,7 @@ router.get('/', (req, res) => {
   }
 
   if (hasUpcomingWindow) {
-    sql += " AND on_sale_date IS NOT NULL AND date(on_sale_date) >= date('now') AND date(on_sale_date) <= date('now', ?)";
+    sql += " AND on_sale_date IS NOT NULL AND date(on_sale_date) >= date('now') AND date(on_sale_date) <= date('now', ?) AND date(date) >= date('now')";
     params.push(`+${upcomingWindowDays} days`);
   }
 
@@ -191,7 +191,7 @@ router.get('/', (req, res) => {
       ) DESC
     `;
   } else if (sort === 'on_sale' || hasUpcomingWindow) {
-    sql += ' ORDER BY CASE WHEN on_sale_date IS NULL THEN 1 ELSE 0 END, date(on_sale_date) ASC, demand_score DESC';
+    sql += ' ORDER BY CASE WHEN on_sale_date IS NULL THEN 1 ELSE 0 END, date(on_sale_date) ASC, date(date) ASC, demand_score DESC';
   } else {
     sql += ' ORDER BY demand_score DESC';
   }

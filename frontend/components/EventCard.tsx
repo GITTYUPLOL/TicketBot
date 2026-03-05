@@ -75,10 +75,13 @@ export default function EventCard({ event }: { event: Event }) {
 
   return (
     <Link href={`/events/${event.id}`}>
-      <Card className="glow-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full overflow-hidden group">
+      <Card className="glow-card hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full overflow-hidden group relative">
+        <div className="absolute inset-0 pointer-events-none opacity-[0.06] bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iMzYiIHZpZXdCb3g9IjAgMCAzNiAzNiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjEiPjxjaXJjbGUgY3g9IjIiIGN5PSIyIiByPSIxIi8+PC9nPjwvc3ZnPg==')]" />
         {/* Genre gradient strip */}
-        <div className={`h-1 bg-gradient-to-r ${gradient.replace('/20', '').replace('/10', '')}`} />
-        <CardContent className="p-4">
+        <div className={`h-1 bg-gradient-to-r ${gradient.replace('/20', '').replace('/10', '')} relative`}>
+          <div className="absolute inset-0 opacity-30 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDQiIGhlaWdodD0iMTEiIHZpZXdCb3g9IjAgMCA0NCAxMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSIjZmZmIiBmaWxsLW9wYWNpdHk9IjAuMjUiPjxwYXRoIGQ9Ik0wIDBoNDJ2MUgweiIvPjwvZz48L3N2Zz4=')]" />
+        </div>
+        <CardContent className="p-4 relative">
           <div className="flex justify-between items-start mb-2 gap-1">
             <div className="flex flex-wrap gap-1">
               <Badge variant="secondary" className="text-xs">{categoryLabel}</Badge>
@@ -119,8 +122,9 @@ export default function EventCard({ event }: { event: Event }) {
 
           <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
             <div>
-              <p className="text-xs text-muted-foreground flex items-center gap-1"><Ticket className="h-3 w-3" /> Price Range</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><Ticket className="h-3 w-3" /> Expected Resale</p>
               <p className="text-sm font-bold">${event.min_price} - ${event.max_price}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Face value ${event.face_value}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
               <DemandBadge score={event.demand_score} />

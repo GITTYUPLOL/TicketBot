@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EventCard from "@/components/EventCard";
 import { Button } from "@/components/ui/button";
-import { getEvents, getGenres, syncLiveData } from "@/lib/api";
+import { getEvents, getEventFilters, getGenres, syncLiveData } from "@/lib/api";
 import { Search, Music, RefreshCw } from "lucide-react";
 
 const DEFAULT_MIN_ROI = "25";
@@ -33,6 +33,12 @@ interface EventListItem {
   days_until_on_sale?: number | null;
   estimated_roi?: number;
   roi_confidence?: "high" | "medium" | "low";
+}
+
+interface EventFiltersPayload {
+  categories?: string[];
+  leagues?: string[];
+  countries?: string[];
 }
 
 function prettyCategory(value: string) {
@@ -87,7 +93,7 @@ export default function EventsPage() {
   const [country, setCountry] = useState("all");
   const [sourceMarket, setSourceMarket] = useState("all");
   const [sort, setSort] = useState("on_sale");
-  const [upcomingWindow, setUpcomingWindow] = useState("all");
+  const [upcomingWindow, setUpcomingWindow] = useState("60");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,20 +133,34 @@ export default function EventsPage() {
   useEffect(() => {
     Promise.all([
       getGenres(),
+      getEventFilters(),
       getEvents({
         sort: "demand",
         limit: "250",
-        upcoming_window: "30",
+        upcoming_window: "60",
         min_roi: DEFAULT_MIN_ROI,
         min_confidence: DEFAULT_MIN_CONFIDENCE,
       }),
     ])
-      .then(([genrePayload, snapshotPayload]) => {
+      .then(([genrePayload, filterPayload, snapshotPayload]) => {
+        const backendFilters = (filterPayload as EventFiltersPayload) || {};
         const snapshot = snapshotPayload as EventListItem[];
         const options = collectFilterOptions(snapshot);
-        setCategories(options.categories);
-        setLeagues(options.leagues);
-        setCountries(options.countries);
+        setCategories(
+          Array.isArray(backendFilters.categories) && backendFilters.categories.length > 0
+            ? backendFilters.categories
+            : options.categories
+        );
+        setLeagues(
+          Array.isArray(backendFilters.leagues) && backendFilters.leagues.length > 0
+            ? backendFilters.leagues
+            : options.leagues
+        );
+        setCountries(
+          Array.isArray(backendFilters.countries) && backendFilters.countries.length > 0
+            ? backendFilters.countries
+            : options.countries
+        );
 
         const genreList = (genrePayload as string[]) || [];
         setGenres(genreList);
@@ -203,6 +223,7 @@ export default function EventsPage() {
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4">
       <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 p-6 text-white">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDQiIGhlaWdodD0iNDQiIHZpZXdCb3g9IjAgMCA0NCA0NCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0yMiAxNkwxNiAyMmw2IDYgNi02LTYtNnoiIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNyIvPjwvZz48L3N2Zz4=')] opacity-35 pointer-events-none" />
         <div className="absolute top-2 right-4 text-white/10">
           <Music className="h-24 w-24" />
         </div>
@@ -221,7 +242,7 @@ export default function EventsPage() {
             onClick={handleLiveSync}
           >
             <RefreshCw className={`h-4 w-4 mr-1 ${refreshing ? "animate-spin" : ""}`} />
-            {refreshing ? "Syncing..." : "Sync Live (Cached)"}
+            {refreshing ? "Syncing..." : "Sync Live"}
           </Button>
         </div>
         {refreshMessage && <p className="relative mt-2 text-xs text-white/85">{refreshMessage}</p>}
@@ -284,6 +305,7 @@ export default function EventsPage() {
             <SelectItem value="7">On Sale: Next 7d</SelectItem>
             <SelectItem value="14">On Sale: Next 14d</SelectItem>
             <SelectItem value="30">On Sale: Next 30d</SelectItem>
+            <SelectItem value="60">On Sale: Next 60d</SelectItem>
             <SelectItem value="all">All Windows</SelectItem>
           </SelectContent>
         </Select>
