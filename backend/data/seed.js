@@ -40,6 +40,26 @@ function seed() {
     { name: 'Carnival Tour', artist: 'Playboi Carti', venue: 'Barclays Center', city: 'Brooklyn, NY', date: '2026-05-05', time: '21:00', genre: 'Hip-Hop', face_value: 120, image_url: '/images/carti.jpg' },
     { name: 'Damn. 10 Year Anniversary', artist: 'Kendrick Lamar', venue: 'The Forum', city: 'Inglewood, CA', date: '2026-04-14', time: '20:00', genre: 'Hip-Hop', face_value: 250, image_url: '/images/kendrick2.jpg' },
     { name: 'Coachella Weekend 1 - Headliner Set', artist: 'Frank Ocean', venue: 'Empire Polo Club', city: 'Indio, CA', date: '2026-04-10', time: '22:00', genre: 'R&B', face_value: 500, image_url: '/images/frank-ocean.jpg' },
+    // Sports
+    { name: 'Super Bowl LXI', artist: 'NFL', venue: 'Levi\'s Stadium', city: 'Santa Clara, CA', date: '2027-02-14', time: '18:30', genre: 'Sports', face_value: 950, image_url: '/images/superbowl.jpg' },
+    { name: 'NBA Finals Game 1', artist: 'NBA', venue: 'Chase Center', city: 'San Francisco, CA', date: '2026-06-04', time: '20:00', genre: 'Sports', face_value: 400, image_url: '/images/nba-finals.jpg' },
+    { name: 'World Series Game 3', artist: 'MLB', venue: 'Yankee Stadium', city: 'Bronx, NY', date: '2026-10-24', time: '20:00', genre: 'Sports', face_value: 275, image_url: '/images/world-series.jpg' },
+    { name: 'UFC 310', artist: 'UFC', venue: 'T-Mobile Arena', city: 'Las Vegas, NV', date: '2026-07-11', time: '22:00', genre: 'Fighting', face_value: 350, image_url: '/images/ufc.jpg' },
+    { name: 'Champions League Final', artist: 'UEFA', venue: 'MetLife Stadium', city: 'East Rutherford, NJ', date: '2026-05-30', time: '15:00', genre: 'Sports', face_value: 500, image_url: '/images/ucl-final.jpg' },
+    { name: 'Canelo vs Crawford', artist: 'Boxing', venue: 'MGM Grand', city: 'Las Vegas, NV', date: '2026-09-13', time: '21:00', genre: 'Fighting', face_value: 600, image_url: '/images/boxing.jpg' },
+    { name: 'College Football Playoff National Championship', artist: 'NCAA', venue: 'Mercedes-Benz Stadium', city: 'Atlanta, GA', date: '2027-01-12', time: '19:45', genre: 'Sports', face_value: 450, image_url: '/images/cfp.jpg' },
+    { name: 'Stanley Cup Finals Game 5', artist: 'NHL', venue: 'Madison Square Garden', city: 'New York, NY', date: '2026-06-18', time: '20:00', genre: 'Sports', face_value: 325, image_url: '/images/stanley-cup.jpg' },
+    // Theater & Broadway
+    { name: 'Hamilton', artist: 'Lin-Manuel Miranda', venue: 'Richard Rodgers Theatre', city: 'New York, NY', date: '2026-06-20', time: '19:00', genre: 'Theater', face_value: 199, image_url: '/images/hamilton.jpg' },
+    { name: 'The Lion King', artist: 'Disney Theatrical', venue: 'Minskoff Theatre', city: 'New York, NY', date: '2026-05-15', time: '19:00', genre: 'Theater', face_value: 175, image_url: '/images/lion-king.jpg' },
+    { name: 'Wicked', artist: 'Broadway', venue: 'Gershwin Theatre', city: 'New York, NY', date: '2026-07-01', time: '14:00', genre: 'Theater', face_value: 180, image_url: '/images/wicked.jpg' },
+    // Comedy
+    { name: 'Dave Chappelle: Live', artist: 'Dave Chappelle', venue: 'Radio City Music Hall', city: 'New York, NY', date: '2026-05-08', time: '20:00', genre: 'Comedy', face_value: 150, image_url: '/images/chappelle.jpg' },
+    { name: 'John Mulaney: In the Round', artist: 'John Mulaney', venue: 'Madison Square Garden', city: 'New York, NY', date: '2026-04-19', time: '20:00', genre: 'Comedy', face_value: 120, image_url: '/images/mulaney.jpg' },
+    { name: 'Kevin Hart: Reality Check Tour', artist: 'Kevin Hart', venue: 'Crypto.com Arena', city: 'Los Angeles, CA', date: '2026-08-16', time: '20:00', genre: 'Comedy', face_value: 95, image_url: '/images/kevin-hart.jpg' },
+    // Festivals
+    { name: 'Lollapalooza 2026', artist: 'Festival', venue: 'Grant Park', city: 'Chicago, IL', date: '2026-07-30', time: '11:00', genre: 'Festival', face_value: 350, image_url: '/images/lolla.jpg' },
+    { name: 'Burning Man 2026', artist: 'Festival', venue: 'Black Rock Desert', city: 'Black Rock, NV', date: '2026-08-30', time: '00:00', genre: 'Festival', face_value: 575, image_url: '/images/burning-man.jpg' },
   ];
 
   const sources = ['Ticketmaster', 'StubHub', 'SeatGeek', 'AXS'];
@@ -246,6 +266,29 @@ function seed() {
       { artist: 'Travis Scott', venue: 'NRG Stadium', genre: 'Hip-Hop', date: '2024-12-20', face: 190, avg: 410, min: 180, max: 1000, roi: 82, demand: 85, source: 'stubhub' },
       // Frank Ocean comps
       { artist: 'Frank Ocean', venue: 'Coachella', genre: 'R&B', date: '2023-04-16', face: 500, avg: 1200, min: 600, max: 3000, roi: 110, demand: 95, source: 'stubhub' },
+      // Sports comps
+      { artist: 'NFL', venue: 'Allegiant Stadium', genre: 'Sports', date: '2024-02-11', face: 950, avg: 8500, min: 4200, max: 25000, roi: 795, demand: 99, source: 'stubhub' },
+      { artist: 'NFL', venue: 'State Farm Stadium', genre: 'Sports', date: '2023-02-12', face: 900, avg: 7200, min: 3800, max: 20000, roi: 700, demand: 99, source: 'seatgeek' },
+      { artist: 'NBA', venue: 'TD Garden', genre: 'Sports', date: '2024-06-06', face: 400, avg: 1800, min: 650, max: 5500, roi: 310, demand: 95, source: 'ticketmaster' },
+      { artist: 'NBA', venue: 'Chase Center', genre: 'Sports', date: '2024-06-10', face: 400, avg: 2100, min: 800, max: 6000, roi: 375, demand: 96, source: 'stubhub' },
+      { artist: 'MLB', venue: 'Dodger Stadium', genre: 'Sports', date: '2024-10-25', face: 275, avg: 1200, min: 400, max: 4000, roi: 290, demand: 92, source: 'ticketmaster' },
+      { artist: 'UFC', venue: 'T-Mobile Arena', genre: 'Fighting', date: '2024-06-29', face: 350, avg: 1400, min: 500, max: 4500, roi: 260, demand: 90, source: 'stubhub' },
+      { artist: 'UFC', venue: 'Madison Square Garden', genre: 'Fighting', date: '2024-11-16', face: 350, avg: 1600, min: 550, max: 5000, roi: 300, demand: 93, source: 'ticketmaster' },
+      { artist: 'UEFA', venue: 'Wembley Stadium', genre: 'Sports', date: '2024-06-01', face: 500, avg: 3200, min: 1200, max: 8000, roi: 480, demand: 97, source: 'stubhub' },
+      { artist: 'Boxing', venue: 'T-Mobile Arena', genre: 'Fighting', date: '2024-09-14', face: 600, avg: 2800, min: 900, max: 7000, roi: 310, demand: 91, source: 'stubhub' },
+      { artist: 'NCAA', venue: 'NRG Stadium', genre: 'Sports', date: '2024-01-08', face: 450, avg: 2600, min: 800, max: 6500, roi: 420, demand: 94, source: 'seatgeek' },
+      { artist: 'NHL', venue: 'Amerant Bank Arena', genre: 'Sports', date: '2024-06-13', face: 325, avg: 1100, min: 350, max: 3200, roi: 200, demand: 88, source: 'ticketmaster' },
+      // Theater comps
+      { artist: 'Lin-Manuel Miranda', venue: 'Richard Rodgers Theatre', genre: 'Theater', date: '2024-12-20', face: 199, avg: 650, min: 280, max: 1500, roi: 190, demand: 92, source: 'stubhub' },
+      { artist: 'Disney Theatrical', venue: 'Minskoff Theatre', genre: 'Theater', date: '2024-07-15', face: 175, avg: 380, min: 160, max: 800, roi: 88, demand: 78, source: 'ticketmaster' },
+      { artist: 'Broadway', venue: 'Gershwin Theatre', genre: 'Theater', date: '2024-11-01', face: 180, avg: 420, min: 175, max: 900, roi: 100, demand: 82, source: 'stubhub' },
+      // Comedy comps
+      { artist: 'Dave Chappelle', venue: 'Radio City Music Hall', genre: 'Comedy', date: '2024-09-20', face: 150, avg: 480, min: 200, max: 1200, roi: 180, demand: 88, source: 'stubhub' },
+      { artist: 'John Mulaney', venue: 'Madison Square Garden', genre: 'Comedy', date: '2024-08-10', face: 120, avg: 350, min: 150, max: 800, roi: 155, demand: 85, source: 'ticketmaster' },
+      { artist: 'Kevin Hart', venue: 'Crypto.com Arena', genre: 'Comedy', date: '2024-07-04', face: 95, avg: 240, min: 100, max: 550, roi: 120, demand: 80, source: 'seatgeek' },
+      // Festival comps
+      { artist: 'Festival', venue: 'Grant Park', genre: 'Festival', date: '2024-08-01', face: 350, avg: 550, min: 300, max: 900, roi: 42, demand: 75, source: 'stubhub' },
+      { artist: 'Festival', venue: 'Empire Polo Club', genre: 'Festival', date: '2024-04-12', face: 500, avg: 1100, min: 600, max: 2200, roi: 95, demand: 90, source: 'stubhub' },
     ];
 
     for (const h of historicalData) {

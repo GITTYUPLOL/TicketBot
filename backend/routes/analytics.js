@@ -35,6 +35,19 @@ function getSaleWindowPriority(window) {
   return 99;
 }
 
+function minimumScoreFromConfidence(confidence) {
+  const normalized = String(confidence || '').trim().toLowerCase();
+  if (normalized === 'high') return 75;
+  if (normalized === 'medium') return 55;
+  return 0;
+}
+
+function pushOptionalFilter(filters, params, expression, value, transform = (input) => input) {
+  if (value === undefined || value === null || value === '' || value === 'all') return;
+  filters.push(expression);
+  params.push(transform(value));
+}
+
 function enrichOpportunity(event) {
   const projectedEntryPrice = Number(event.min_price || event.face_value || 0);
   const projectedResalePrice = Math.round(Number(event.max_price || projectedEntryPrice) * 0.85);
@@ -69,18 +82,34 @@ router.get('/upcoming-opportunities', (req, res) => {
   const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, 100)
     : 18;
+  const minRoi = Number(req.query.min_roi);
+  const minConfidence = minimumScoreFromConfidence(req.query.min_confidence);
+  const filters = [
+    'on_sale_date IS NOT NULL',
+    "date(on_sale_date) >= date('now')",
+    "date(on_sale_date) <= date('now', '+30 days')",
+  ];
+  const params = [];
+
+  pushOptionalFilter(filters, params, "lower(COALESCE(category, 'other')) = ?", req.query.category, (value) => String(value).toLowerCase());
+  pushOptionalFilter(filters, params, "lower(COALESCE(league, '')) = ?", req.query.league, (value) => String(value).toLowerCase());
+  pushOptionalFilter(filters, params, "upper(COALESCE(country_code, '')) = ?", req.query.country, (value) => String(value).toUpperCase());
+  pushOptionalFilter(filters, params, "lower(COALESCE(source_market, 'primary')) = ?", req.query.source_market, (value) => String(value).toLowerCase());
 
   const events = db.prepare(`
-    SELECT id, name, artist, venue, city, date, on_sale_date, demand_score, min_price, max_price, face_value, genre
+    SELECT id, name, artist, venue, city, country_code, category, subcategory, league, source_market,
+      date, on_sale_date, demand_score, min_price, max_price, face_value, genre
     FROM events
-    WHERE on_sale_date IS NOT NULL
-      AND date(on_sale_date) >= date('now')
-      AND date(on_sale_date) <= date('now', '+30 days')
-  `).all();
+    WHERE ${filters.join(' AND ')}
+  `).all(...params);
 
-  const opportunities = events
+  const filteredEvents = events
     .map(enrichOpportunity)
     .filter((event) => event.on_sale_window)
+    .filter((event) => event.demand_score >= minConfidence)
+    .filter((event) => !Number.isFinite(minRoi) || event.estimated_roi >= minRoi);
+
+  const opportunities = filteredEvents
     .sort((a, b) =>
       a.sale_window_priority - b.sale_window_priority ||
       b.estimated_roi - a.estimated_roi ||
@@ -89,7 +118,7 @@ router.get('/upcoming-opportunities', (req, res) => {
     .slice(0, limit)
     .map(({ sale_window_priority, ...event }) => event);
 
-  const counts = opportunities.reduce(
+  const counts = filteredEvents.reduce(
     (summary, event) => {
       if (event.on_sale_window === '7d') summary.window_7d += 1;
       else if (event.on_sale_window === '14d') summary.window_14d += 1;

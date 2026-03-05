@@ -8,6 +8,9 @@ function parseArgs(argv) {
 
   for (const arg of argv) {
     if (arg.startsWith('--country=')) options.countryCode = arg.split('=')[1];
+    else if (arg.startsWith('--countries=')) options.countryCodes = arg.split('=')[1];
+    else if (arg.startsWith('--categories=')) options.categories = arg.split('=')[1];
+    else if (arg.startsWith('--segments=')) options.segmentNames = arg.split('=')[1];
     else if (arg.startsWith('--pages=')) options.maxPages = Number(arg.split('=')[1]);
     else if (arg.startsWith('--size=')) options.size = Number(arg.split('=')[1]);
     else if (arg.startsWith('--days=')) options.daysAhead = Number(arg.split('=')[1]);

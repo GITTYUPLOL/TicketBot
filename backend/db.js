@@ -13,13 +13,21 @@ const schemaSQL = `
     artist TEXT NOT NULL,
     venue TEXT NOT NULL,
     city TEXT NOT NULL,
+    country_code TEXT,
     date TEXT NOT NULL,
     time TEXT NOT NULL,
+    category TEXT DEFAULT 'other',
+    subcategory TEXT,
+    league TEXT,
     genre TEXT NOT NULL,
     image_url TEXT,
     face_value REAL NOT NULL,
     min_price REAL,
     max_price REAL,
+    currency TEXT,
+    source_market TEXT DEFAULT 'primary',
+    source_provider TEXT,
+    source_event_id TEXT,
     demand_score REAL DEFAULT 0,
     trending INTEGER DEFAULT 0,
     on_sale_date TEXT,
@@ -157,7 +165,69 @@ const schemaSQL = `
     last_updated TEXT DEFAULT (datetime('now')),
     UNIQUE(site_name, page_type)
   );
+
+  CREATE TABLE IF NOT EXISTS ingestion_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    environment TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    providers TEXT,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    expires_at TEXT,
+    fetched INTEGER DEFAULT 0,
+    normalized INTEGER DEFAULT 0,
+    inserted INTEGER DEFAULT 0,
+    updated INTEGER DEFAULT 0,
+    skipped INTEGER DEFAULT 0,
+    errors INTEGER DEFAULT 0,
+    summary_json TEXT
+  );
 `;
+
+function addColumnIfMissing(db, tableName, columnName, definition) {
+  const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const hasColumn = tableInfo.some((column) => column.name === columnName);
+  if (!hasColumn) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+}
+
+function applyMigrations(db) {
+  addColumnIfMissing(db, 'events', 'country_code', 'TEXT');
+  addColumnIfMissing(db, 'events', 'category', "TEXT DEFAULT 'other'");
+  addColumnIfMissing(db, 'events', 'subcategory', 'TEXT');
+  addColumnIfMissing(db, 'events', 'league', 'TEXT');
+  addColumnIfMissing(db, 'events', 'currency', 'TEXT');
+  addColumnIfMissing(db, 'events', 'source_market', "TEXT DEFAULT 'primary'");
+  addColumnIfMissing(db, 'events', 'source_provider', 'TEXT');
+  addColumnIfMissing(db, 'events', 'source_event_id', 'TEXT');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ingestion_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      environment TEXT NOT NULL,
+      scope_key TEXT NOT NULL,
+      providers TEXT,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      completed_at TEXT NOT NULL,
+      expires_at TEXT,
+      fetched INTEGER DEFAULT 0,
+      normalized INTEGER DEFAULT 0,
+      inserted INTEGER DEFAULT 0,
+      updated INTEGER DEFAULT 0,
+      skipped INTEGER DEFAULT 0,
+      errors INTEGER DEFAULT 0,
+      summary_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_on_sale_date ON events(on_sale_date);
+    CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
+    CREATE INDEX IF NOT EXISTS idx_events_league ON events(league);
+    CREATE INDEX IF NOT EXISTS idx_events_country_code ON events(country_code);
+    CREATE INDEX IF NOT EXISTS idx_ingestion_runs_scope ON ingestion_runs(environment, scope_key, completed_at);
+  `);
+}
 
 function normalizeEnvironment(value) {
   const normalized = String(value || '').trim().toLowerCase();
@@ -172,6 +242,7 @@ function createDatabase(environment) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(schemaSQL);
+  applyMigrations(db);
   return db;
 }
 

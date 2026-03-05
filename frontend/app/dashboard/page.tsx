@@ -7,9 +7,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import PriceChart from "@/components/PriceChart";
 import DemandBadge from "@/components/DemandBadge";
-import { getUpcomingOpportunities, getMarketHeatmap, getPriceHistory, ingestLiveData, getBatchReadiness } from "@/lib/api";
-import { TrendingUp, DollarSign, BarChart3, Activity, CalendarClock, Music, Ticket, Zap, CheckCircle, AlertTriangle, XCircle, Shield } from "lucide-react";
+import { getUpcomingOpportunities, getMarketHeatmap, getPriceHistory, syncLiveData, getBatchReadiness } from "@/lib/api";
+import { DollarSign, Activity, CalendarClock, Music, Ticket, Zap, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 import Link from "next/link";
+
+const DEFAULT_MIN_ROI = "25";
+const DEFAULT_MIN_CONFIDENCE = "medium";
 
 type SaleWindow = "7d" | "14d" | "30d";
 
@@ -67,7 +70,7 @@ export default function Dashboard() {
   const topRoiEvent = roiRanked[0];
 
   useEffect(() => {
-    Promise.all([getUpcomingOpportunities(), getMarketHeatmap()])
+    Promise.all([getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE }), getMarketHeatmap()])
       .then(async ([upcomingResponse, h]) => {
         const typedUpcoming = upcomingResponse as UpcomingResponse;
         const typedHeatmap = h as HeatmapData;
@@ -104,19 +107,35 @@ export default function Dashboard() {
     setSyncingLive(true);
     setSyncMessage("");
     try {
-      const summary = await ingestLiveData({ max_pages: 10, days_ahead: 45 }) as {
+      const summary = await syncLiveData({
+        ttl_minutes: 30,
+        max_pages: 12,
+        days_ahead: 60,
+        categories: ["concerts", "sports", "theater", "comedy", "family"],
+      }) as {
+        cached?: boolean;
+        cache_age_minutes?: number;
+        summary?: { totals?: { fetched?: number; inserted?: number; updated?: number; errors?: number } };
         totals?: { fetched?: number; inserted?: number; updated?: number; errors?: number };
         providers?: Array<{ provider: string; errors: string[] }>;
       };
+
+      if (summary.cached) {
+        const age = summary.cache_age_minutes ?? 0;
+        setSyncMessage(`Using cached live data (${age}m old)`);
+      }
+
       const totals = summary.totals || {};
+      const fallbackTotals = summary.summary?.totals || {};
+      const mergedTotals = Object.keys(totals).length ? totals : fallbackTotals;
       const providerErrors = (summary.providers || []).flatMap((provider) => provider.errors || []);
-      if ((totals.inserted || 0) > 0 || (totals.updated || 0) > 0) {
-        const baseMessage = `Synced ${totals.fetched || 0} events: +${totals.inserted || 0} inserted, ${totals.updated || 0} updated`;
+      if ((mergedTotals.inserted || 0) > 0 || (mergedTotals.updated || 0) > 0) {
+        const baseMessage = `Synced ${mergedTotals.fetched || 0} events: +${mergedTotals.inserted || 0} inserted, ${mergedTotals.updated || 0} updated`;
         setSyncMessage(providerErrors.length > 0 ? `${baseMessage}. Note: ${providerErrors[0]}` : baseMessage);
-      } else {
+      } else if (!summary.cached) {
         setSyncMessage(providerErrors[0] || "No live events were synced");
       }
-      const refreshed = await getUpcomingOpportunities();
+      const refreshed = await getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE });
       const typed = refreshed as UpcomingResponse;
       setUpcoming(typed.opportunities || []);
       setWindowStats(typed.windows || { window_7d: 0, window_14d: 0, window_30d: 0 });
@@ -139,8 +158,6 @@ export default function Dashboard() {
   // Count readiness statuses
   const goCount = Object.values(readinessMap).filter(r => r.readiness_status === "go").length;
   const partialCount = Object.values(readinessMap).filter(r => r.readiness_status === "partial").length;
-  const notReadyCount = Object.values(readinessMap).filter(r => r.readiness_status === "not_ready").length;
-
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       {/* Hero header */}

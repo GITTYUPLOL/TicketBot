@@ -1,5 +1,11 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
 const ENV_KEY = 'ticketbot-env';
+
+function getApiBase() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  // Browser: proxy through Next.js to avoid cross-origin issues
+  if (typeof window !== 'undefined') return '/api/proxy';
+  return 'http://127.0.0.1:3001/api';
+}
 
 function getApiEnvironment() {
   if (typeof window === 'undefined') return 'test';
@@ -8,15 +14,19 @@ function getApiEnvironment() {
 }
 
 async function fetchAPI(path: string, options?: RequestInit) {
+  const base = getApiBase();
   const headers = new Headers(options?.headers);
   headers.set('Content-Type', 'application/json');
   headers.set('x-ticketbot-env', getApiEnvironment());
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const request: RequestInit = {
     ...options,
-    cache: 'no-store',
     headers,
-  });
+  };
+
+  if (!request.cache) request.cache = 'no-store';
+
+  const res = await fetch(`${base}${path}`, request);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
@@ -28,6 +38,7 @@ export const getEvents = (params?: Record<string, string>) => {
 };
 export const getEvent = (id: string | number) => fetchAPI(`/events/${id}`);
 export const getGenres = () => fetchAPI('/events/genres');
+export const getEventFilters = () => fetchAPI('/events/filters');
 
 // Tickets
 export const getTickets = (eventId: string | number, params?: Record<string, string>) => {
@@ -49,6 +60,17 @@ export const getUpcomingOpportunities = (params?: Record<string, string>) => {
 };
 export const ingestLiveData = (data?: Record<string, unknown>) =>
   fetchAPI('/live/ingest', { method: 'POST', body: JSON.stringify(data || {}) });
+export const syncLiveData = async (data?: Record<string, unknown>) => {
+  const payload = JSON.stringify(data || {});
+  try {
+    return await fetchAPI('/live/sync', { method: 'POST', body: payload });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'API error: 404') {
+      return fetchAPI('/live/ingest', { method: 'POST', body: payload });
+    }
+    throw error;
+  }
+};
 export const getRoiCalculator = (params?: Record<string, string>) => {
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   return fetchAPI(`/analytics/roi-calculator${qs}`);
@@ -112,3 +134,8 @@ export const getEventReadiness = (eventId: string | number) =>
   fetchAPI(`/readiness/${eventId}`);
 export const getBatchReadiness = (eventIds: number[]) =>
   fetchAPI(`/readiness?event_ids=${eventIds.join(',')}`);
+
+// Data sourcing
+export const triggerDataRefresh = () =>
+  syncLiveData({});
+export const getSourceStatus = () => fetchAPI('/sources/status');

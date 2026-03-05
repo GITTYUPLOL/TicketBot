@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ticketbot - Concert Ticket Platform",
-  description: "Aggregated ticket analytics, autobuy, and resale tracking",
+  title: "Ticketbot - Ticket Resale Intelligence",
+  description: "Live event aggregation, ROI analytics, and automated ticket purchasing",
 };
 
 export default function RootLayout({

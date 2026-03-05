@@ -12,8 +12,12 @@ interface Event {
   artist: string;
   venue: string;
   city: string;
+  country_code?: string | null;
   date: string;
   genre: string;
+  category?: string | null;
+  league?: string | null;
+  source_market?: string | null;
   min_price: number;
   max_price: number;
   face_value: number;
@@ -33,10 +37,27 @@ const genreGradients: Record<string, string> = {
   "R&B": "from-blue-500/20 to-indigo-500/10",
   Country: "from-amber-500/20 to-yellow-500/10",
   Latin: "from-green-500/20 to-emerald-500/10",
+  Sports: "from-emerald-500/20 to-green-500/10",
+  Fighting: "from-red-600/20 to-orange-500/10",
+  Comedy: "from-yellow-500/20 to-amber-500/10",
+  Theater: "from-rose-500/20 to-pink-500/10",
+  Festival: "from-cyan-500/20 to-teal-500/10",
+  Electronic: "from-indigo-500/20 to-blue-500/10",
+  Other: "from-slate-500/20 to-gray-500/10",
 };
 
 export default function EventCard({ event }: { event: Event }) {
   const gradient = genreGradients[event.genre] || "from-fuchsia-500/20 to-violet-500/10";
+  const category = event.category || "other";
+  const categoryLabel =
+    category === "concerts" ? "Concerts" :
+    category === "sports" ? "Sports" :
+    category === "theater" ? "Theater" :
+    category === "comedy" ? "Comedy" :
+    category === "family" ? "Family" :
+    category === "festivals" ? "Festivals" :
+    "Other";
+  const sourceMarket = event.source_market || "primary";
   const onSaleLabel =
     event.days_until_on_sale === 0
       ? "on sale today"
@@ -58,14 +79,21 @@ export default function EventCard({ event }: { event: Event }) {
         {/* Genre gradient strip */}
         <div className={`h-1 bg-gradient-to-r ${gradient.replace('/20', '').replace('/10', '')}`} />
         <CardContent className="p-4">
-          <div className="flex justify-between items-start mb-2">
-            <Badge variant="secondary" className="text-xs">{event.genre}</Badge>
-            {event.trending && (
-              <Badge className="bg-orange-500/15 text-orange-500 border-orange-300/30 text-xs gap-1" variant="outline">
-                <TrendingUp className="h-3 w-3" />
-                Trending
-              </Badge>
-            )}
+          <div className="flex justify-between items-start mb-2 gap-1">
+            <div className="flex flex-wrap gap-1">
+              <Badge variant="secondary" className="text-xs">{categoryLabel}</Badge>
+              {event.league && <Badge variant="outline" className="text-xs">{event.league}</Badge>}
+              {event.country_code && <Badge variant="outline" className="text-xs">{event.country_code}</Badge>}
+              <Badge variant="outline" className="text-xs uppercase">{sourceMarket}</Badge>
+            </div>
+            <div>
+              {event.trending && (
+                <Badge className="bg-orange-500/15 text-orange-500 border-orange-300/30 text-xs gap-1" variant="outline">
+                  <TrendingUp className="h-3 w-3" />
+                  Trending
+                </Badge>
+              )}
+            </div>
           </div>
 
           <h3 className="font-bold text-base mt-2 line-clamp-1 group-hover:text-primary transition-colors">{event.artist}</h3>

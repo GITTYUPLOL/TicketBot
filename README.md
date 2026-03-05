@@ -188,9 +188,11 @@ Optional env vars:
 
 ```bash
 TICKETMASTER_COUNTRY_CODE=US
+TICKETMASTER_COUNTRY_CODES=US,CA,GB,AU,DE,FR,ES,NL,IT,BR,MX,JP
 TICKETMASTER_MAX_PAGES=10
 TICKETMASTER_PAGE_SIZE=200
 TICKETMASTER_DAYS_AHEAD=45
+SEATGEEK_CLIENT_ID=<optional-for-real-resale-market-data>
 ```
 
 Run one-time live sync (from `backend/`):
@@ -208,6 +210,21 @@ curl -X POST http://localhost:3001/api/live/ingest \
   -H "Content-Type: application/json" \
   -H "x-ticketbot-env: live" \
   -d '{"providers":["ticketmaster_discovery","ticketmaster_web"],"max_pages":10,"days_ahead":45}'
+```
+
+Recommended cached sync endpoint (avoids re-pulling providers on every reload):
+
+```bash
+curl -X POST http://localhost:3001/api/live/sync \
+  -H "Content-Type: application/json" \
+  -H "x-ticketbot-env: live" \
+  -d '{"ttl_minutes":30,"max_pages":12,"days_ahead":60,"providers":["ticketmaster_discovery","ticketmaster_web","seatgeek_resale"],"categories":["concerts","sports","theater","comedy","family"]}'
+```
+
+Category/league/region filter metadata for UI:
+
+```bash
+curl -H "x-ticketbot-env: live" http://localhost:3001/api/events/filters
 ```
 
 ## Google Cloud Ubuntu Deployment (Single VM)

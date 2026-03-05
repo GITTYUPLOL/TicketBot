@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Search, Zap, User, ShoppingBag, Menu, Crosshair, KeyRound, Moon, Sun, Music } from "lucide-react";
+import { LayoutDashboard, Search, Zap, User, ShoppingBag, Menu, Crosshair, KeyRound, Moon, Sun, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState, useEffect } from "react";
@@ -75,9 +75,9 @@ export default function Navbar() {
       <div className="flex h-14 items-center px-4 md:px-6">
         <Link href="/dashboard" className="mr-6 flex items-center space-x-2 group">
           <div className="relative">
-            <Music className="h-5 w-5 text-fuchsia-500 transition-transform group-hover:scale-110" />
+            <Ticket className="h-5 w-5 text-fuchsia-500 transition-transform group-hover:scale-110" />
             <div className="absolute inset-0 h-5 w-5 text-fuchsia-500 animate-ping opacity-20">
-              <Music className="h-5 w-5" />
+              <Ticket className="h-5 w-5" />
             </div>
           </div>
           <span className="font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 bg-clip-text text-transparent">
@@ -131,7 +131,7 @@ export default function Navbar() {
             </SheetTrigger>
             <SheetContent side="left" className="w-64">
               <div className="flex items-center gap-2 mb-6 mt-4">
-                <Music className="h-5 w-5 text-fuchsia-500" />
+                <Ticket className="h-5 w-5 text-fuchsia-500" />
                 <span className="font-bold text-lg bg-gradient-to-r from-fuchsia-500 to-violet-500 bg-clip-text text-transparent">
                   Ticketbot
                 </span>
