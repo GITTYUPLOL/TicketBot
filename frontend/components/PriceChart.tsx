@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 interface PricePoint {
   date: string;
@@ -23,10 +23,12 @@ export default function PriceChart({ data, height = 300 }: { data: PricePoint[];
     return () => observer.disconnect();
   }, []);
 
-  const avgColor = isDark ? "#ff6ad5" : "hsl(var(--chart-1))";
-  const minColor = isDark ? "#66e2ff" : "hsl(var(--chart-2))";
-  const maxColor = isDark ? "#ffd166" : "hsl(var(--chart-5))";
-  const gridColor = isDark ? "rgba(255,255,255,0.16)" : "hsl(var(--border))";
+  const avgColor = isDark ? "#ff4fc3" : "hsl(var(--chart-1))";
+  const minColor = isDark ? "#36d9ff" : "hsl(var(--chart-2))";
+  const maxColor = isDark ? "#ffd94d" : "hsl(var(--chart-5))";
+  const gridColor = isDark ? "rgba(255,255,255,0.2)" : "hsl(var(--border))";
+  const axisColor = isDark ? "rgba(255,255,255,0.26)" : "hsl(var(--border))";
+  const tickColor = isDark ? "rgba(255,255,255,0.82)" : "hsl(var(--muted-foreground))";
   const tooltipBackground = isDark ? "#1f1530" : "hsl(var(--card))";
   const gradientId = isDark ? "avgGradientDark" : "avgGradientLight";
 
@@ -45,10 +47,10 @@ export default function PriceChart({ data, height = 300 }: { data: PricePoint[];
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-        <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />
-        <YAxis className="text-xs" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
+        <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11, fill: tickColor }} stroke={axisColor} />
+        <YAxis className="text-xs" tick={{ fontSize: 11, fill: tickColor }} stroke={axisColor} tickFormatter={(v) => `$${v}`} />
         <Tooltip
-          contentStyle={{ background: tooltipBackground, border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          contentStyle={{ background: tooltipBackground, border: isDark ? "1px solid rgba(255,255,255,0.2)" : "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           formatter={((value: any, name: any) => [`$${value}`, String(name).replace("_", " ")]) as any}
         />

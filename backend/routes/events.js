@@ -1,39 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const MS_PER_DAY = 86400000;
-
-function getConfidenceLevel(demandScore) {
-  if (demandScore >= 75) return 'high';
-  if (demandScore >= 55) return 'medium';
-  return 'low';
-}
-
-function minimumScoreFromConfidence(confidence) {
-  const value = String(confidence || '').trim().toLowerCase();
-  if (value === 'high') return 75;
-  if (value === 'medium') return 55;
-  return 0;
-}
-
-function getDaysUntilOnSale(onSaleDate) {
-  if (!onSaleDate) return null;
-
-  const parsed = new Date(`${onSaleDate}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
-
-  const now = new Date();
-  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.ceil((parsed.getTime() - todayUTC) / MS_PER_DAY);
-}
-
-function getOnSaleWindow(daysUntilOnSale) {
-  if (daysUntilOnSale === null || daysUntilOnSale < 0) return null;
-  if (daysUntilOnSale <= 7) return '7d';
-  if (daysUntilOnSale <= 14) return '14d';
-  if (daysUntilOnSale <= 30) return '30d';
-  return null;
-}
+const {
+  buildRoiProjection,
+  getDaysUntilOnSale,
+  getOnSaleWindow,
+  minimumDemandScoreFromConfidence,
+} = require('../services/roiProjection');
 
 function inferCategoryFromGenre(genre) {
   const normalized = String(genre || '').toLowerCase();
@@ -52,33 +25,18 @@ function toPositiveNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function enrichEvent(event) {
-  const purchasePrice = Number(event.min_price || event.face_value || 0);
-  const estimatedResale = Math.round(Number(event.max_price || purchasePrice) * 0.85);
-  const estimatedFees = Math.round(purchasePrice * 0.12);
-  const estimatedProfit = estimatedResale - purchasePrice - estimatedFees;
-  const estimatedRoi = purchasePrice > 0
-    ? Math.round((estimatedProfit / purchasePrice) * 100)
-    : 0;
+function enrichEvent(event, projectionCache) {
+  const projection = buildRoiProjection(event, { cache: projectionCache });
   const daysUntilOnSale = getDaysUntilOnSale(event.on_sale_date);
-  const faceValue = Number(event.face_value || 0);
 
   return {
     ...event,
     category: event.category || inferCategoryFromGenre(event.genre),
     source_market: event.source_market || 'primary',
     trending: !!event.trending,
-    resale_potential: faceValue > 0
-      ? Math.round(((Number(event.max_price || 0) - faceValue) / faceValue) * 100)
-      : 0,
     days_until_on_sale: daysUntilOnSale,
     on_sale_window: getOnSaleWindow(daysUntilOnSale),
-    projected_entry_price: purchasePrice,
-    projected_resale_price: estimatedResale,
-    estimated_fees: estimatedFees,
-    estimated_profit: estimatedProfit,
-    estimated_roi: estimatedRoi,
-    roi_confidence: getConfidenceLevel(event.demand_score),
+    ...projection,
   };
 }
 
@@ -154,22 +112,11 @@ router.get('/', (req, res) => {
 
   const minDemand = Math.max(
     toPositiveNumber(min_demand) || 0,
-    minimumScoreFromConfidence(min_confidence)
+    minimumDemandScoreFromConfidence(min_confidence)
   );
   if (minDemand > 0) {
     sql += ' AND demand_score >= ?';
     params.push(minDemand);
-  }
-
-  const minRoi = Number(min_roi);
-  if (Number.isFinite(minRoi)) {
-    sql += `
-      AND (
-        ((max_price * 0.85 - COALESCE(min_price, face_value) - (COALESCE(min_price, face_value) * 0.12))
-        * 100.0 / NULLIF(COALESCE(min_price, face_value), 0))
-      ) >= ?
-    `;
-    params.push(minRoi);
   }
 
   if (hasUpcomingWindow) {
@@ -183,14 +130,7 @@ router.get('/', (req, res) => {
   else if (sort === 'date') sql += ' ORDER BY date ASC';
   else if (sort === 'category') sql += ' ORDER BY category ASC, demand_score DESC';
   else if (sort === 'league') sql += ' ORDER BY league ASC, demand_score DESC';
-  else if (sort === 'roi') {
-    sql += `
-      ORDER BY (
-        (max_price * 0.85 - COALESCE(min_price, face_value) - (COALESCE(min_price, face_value) * 0.12))
-        * 1.0 / NULLIF(COALESCE(min_price, face_value), 0)
-      ) DESC
-    `;
-  } else if (sort === 'on_sale' || hasUpcomingWindow) {
+  else if (sort === 'on_sale' || hasUpcomingWindow) {
     sql += ' ORDER BY CASE WHEN on_sale_date IS NULL THEN 1 ELSE 0 END, date(on_sale_date) ASC, date(date) ASC, demand_score DESC';
   } else {
     sql += ' ORDER BY demand_score DESC';
@@ -198,13 +138,23 @@ router.get('/', (req, res) => {
 
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const safeOffset = Math.max(Number(offset) || 0, 0);
-  sql += ' LIMIT ? OFFSET ?';
-  params.push(safeLimit, safeOffset);
+  const minRoi = Number(min_roi);
+  const projectionCache = new Map();
 
   const events = db.prepare(sql).all(...params);
-  const enriched = events.map(enrichEvent);
+  const enriched = events.map((event) => enrichEvent(event, projectionCache));
+  let filtered = enriched
+    .filter((event) => !Number.isFinite(minRoi) || event.estimated_roi >= minRoi);
 
-  res.json(enriched);
+  if (sort === 'roi') {
+    filtered = filtered.sort((a, b) =>
+      b.estimated_roi - a.estimated_roi
+      || b.demand_score - a.demand_score
+      || (a.days_until_on_sale ?? 9999) - (b.days_until_on_sale ?? 9999)
+    );
+  }
+
+  res.json(filtered.slice(safeOffset, safeOffset + safeLimit));
 });
 
 // GET /api/events/filters - available filter values

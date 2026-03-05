@@ -7,8 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import PriceChart from "@/components/PriceChart";
 import DemandBadge from "@/components/DemandBadge";
-import { getUpcomingOpportunities, getMarketHeatmap, getPriceHistory, syncLiveData, getBatchReadiness } from "@/lib/api";
-import { DollarSign, Activity, CalendarClock, Music, Ticket, Zap, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
+import { getUpcomingOpportunities, getMarketHeatmap, getPriceHistory, syncLiveData, getBatchReadiness, getDashboardQuickView } from "@/lib/api";
+import { DollarSign, Activity, CalendarClock, Music, Ticket, Zap, CheckCircle, AlertTriangle, XCircle, Users, Crosshair, ShoppingCart, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 const DEFAULT_MIN_ROI = "25";
@@ -27,8 +27,14 @@ interface UpcomingOpportunity {
   demand_score: number;
   projected_entry_price: number;
   projected_resale_price: number;
+  projected_entry_range_low?: number | null;
+  projected_entry_range_high?: number | null;
+  projected_resale_range_low?: number | null;
+  projected_resale_range_high?: number | null;
   estimated_roi: number;
   roi_confidence: "high" | "medium" | "low";
+  price_estimate_status?: "blended" | "market_only" | "historical_modeled" | "unverified";
+  price_estimate_confidence?: "high" | "medium" | "low";
   days_until_on_sale: number;
   on_sale_window: SaleWindow;
 }
@@ -40,6 +46,13 @@ interface HeatmapGenre { genre: string; event_count: number; avg_demand: number;
 interface HeatmapVenue { venue: string; city: string; event_count: number; avg_demand: number; avg_max_price: number; }
 interface HeatmapData { genres: HeatmapGenre[]; venues: HeatmapVenue[]; }
 interface ReadinessItem { event_id: number; readiness_score: number; readiness_status: string; has_accounts: boolean; has_card: boolean; has_rule: boolean; has_selectors: boolean; }
+interface QuickViewSnapshot {
+  events: { total: number; on_sale_7d: number; on_sale_30d: number; on_sale_60d: number; };
+  autobuy: { total_rules: number; enabled_rules: number; active_snipe_rules: number; };
+  accounts: { total_accounts: number; active_accounts: number; active_platforms: number; };
+  orders: { total_orders: number; orders_30d: number; spend_30d: number; profit_30d: number; };
+  sniper: { total_sessions: number; active_sessions: number; needs_input: number; };
+}
 
 function ReadinessIndicator({ readiness }: { readiness?: ReadinessItem }) {
   if (!readiness) return <span className="text-xs text-muted-foreground">...</span>;
@@ -55,6 +68,21 @@ function ReadinessIndicator({ readiness }: { readiness?: ReadinessItem }) {
   );
 }
 
+function formatRange(low?: number | null, high?: number | null) {
+  const l = typeof low === "number" ? Math.round(low) : null;
+  const h = typeof high === "number" ? Math.round(high) : null;
+  if (l === null && h === null) return "—";
+  if (l !== null && h !== null && l !== h) return `$${l}-$${h}`;
+  return `$${l ?? h}`;
+}
+
+function priceStatusLabel(status?: "blended" | "market_only" | "historical_modeled" | "unverified") {
+  if (status === "blended") return "Blend";
+  if (status === "market_only") return "Market";
+  if (status === "historical_modeled") return "Historical";
+  return "Unverified";
+}
+
 export default function Dashboard() {
   const [upcoming, setUpcoming] = useState<UpcomingOpportunity[]>([]);
   const [windowStats, setWindowStats] = useState<WindowStats>({ window_7d: 0, window_14d: 0, window_30d: 0 });
@@ -62,6 +90,13 @@ export default function Dashboard() {
   const [readinessMap, setReadinessMap] = useState<Record<number, ReadinessItem>>({});
   const [selectedChart, setSelectedChart] = useState<number | null>(null);
   const [chartData, setChartData] = useState<PricePoint[]>([]);
+  const [quickView, setQuickView] = useState<QuickViewSnapshot>({
+    events: { total: 0, on_sale_7d: 0, on_sale_30d: 0, on_sale_60d: 0 },
+    autobuy: { total_rules: 0, enabled_rules: 0, active_snipe_rules: 0 },
+    accounts: { total_accounts: 0, active_accounts: 0, active_platforms: 0 },
+    orders: { total_orders: 0, orders_30d: 0, spend_30d: 0, profit_30d: 0 },
+    sniper: { total_sessions: 0, active_sessions: 0, needs_input: 0 },
+  });
   const [loading, setLoading] = useState(true);
   const [environment, setEnvironment] = useState<"live" | "test">("test");
   const [syncingLive, setSyncingLive] = useState(false);
@@ -70,14 +105,20 @@ export default function Dashboard() {
   const topRoiEvent = roiRanked[0];
 
   useEffect(() => {
-    Promise.all([getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE, upcoming_window: "7" }), getMarketHeatmap()])
-      .then(async ([upcomingResponse, h]) => {
+    Promise.all([
+      getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE, upcoming_window: "7" }),
+      getMarketHeatmap(),
+      getDashboardQuickView(),
+    ])
+      .then(async ([upcomingResponse, h, quick]) => {
         const typedUpcoming = upcomingResponse as UpcomingResponse;
         const typedHeatmap = h as HeatmapData;
+        const typedQuick = quick as QuickViewSnapshot;
         const opportunities = typedUpcoming?.opportunities || [];
         setUpcoming(opportunities);
         setWindowStats(typedUpcoming?.windows || { window_7d: 0, window_14d: 0, window_30d: 0 });
         setHeatmap(typedHeatmap);
+        setQuickView(typedQuick);
         if (opportunities.length > 0) {
           setSelectedChart(opportunities[0].id);
           getPriceHistory(opportunities[0].id).then((data) => setChartData(data as PricePoint[]));
@@ -87,7 +128,18 @@ export default function Dashboard() {
           const map: Record<number, ReadinessItem> = {};
           readiness.forEach(r => { map[r.event_id] = r; });
           setReadinessMap(map);
+        } else {
+          setSelectedChart(null);
+          setChartData([]);
+          setReadinessMap({});
         }
+      })
+      .catch((error) => {
+        console.error("[Dashboard] initial load failed:", error);
+        setUpcoming([]);
+        setWindowStats({ window_7d: 0, window_14d: 0, window_30d: 0 });
+        setHeatmap({ genres: [], venues: [] });
+        setReadinessMap({});
       })
       .finally(() => setLoading(false));
   }, []);
@@ -136,10 +188,25 @@ export default function Dashboard() {
       } else if (!summary.cached) {
         setSyncMessage(providerErrors[0] || "No live events were synced");
       }
-      const refreshed = await getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE, upcoming_window: "7" });
+      const [refreshed, quick] = await Promise.all([
+        getUpcomingOpportunities({ min_roi: DEFAULT_MIN_ROI, min_confidence: DEFAULT_MIN_CONFIDENCE, upcoming_window: "7" }),
+        getDashboardQuickView(),
+      ]);
       const typed = refreshed as UpcomingResponse;
-      setUpcoming(typed.opportunities || []);
+      const typedQuick = quick as QuickViewSnapshot;
+      const opportunities = typed.opportunities || [];
+      setUpcoming(opportunities);
       setWindowStats(typed.windows || { window_7d: 0, window_14d: 0, window_30d: 0 });
+      setQuickView(typedQuick);
+      if (opportunities.length > 0) {
+        const ids = opportunities.map((entry) => entry.id);
+        const readiness = await getBatchReadiness(ids) as ReadinessItem[];
+        const map: Record<number, ReadinessItem> = {};
+        readiness.forEach((item) => { map[item.event_id] = item; });
+        setReadinessMap(map);
+      } else {
+        setReadinessMap({});
+      }
     } catch (error) {
       setSyncMessage(error instanceof Error ? error.message : "Live sync failed");
     } finally {
@@ -167,10 +234,10 @@ export default function Dashboard() {
         <div className="relative">
           <div className="flex items-center gap-2 mb-1">
             <Zap className="h-5 w-5" />
-            <span className="text-sm font-medium text-white/80">ROI Leaderboard + Snipe Readiness</span>
+            <span className="text-sm font-medium text-white/80">Control Tower + ROI Leaderboard</span>
           </div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm text-white/70 mt-1">Research upcoming drops, pick winners, queue snipes</p>
+          <p className="text-sm text-white/70 mt-1">Quick-view every workflow, then drill into events with the best modeled ROI</p>
           {environment === "live" && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <Button size="sm" onClick={handleLiveSync} disabled={syncingLive}
@@ -222,6 +289,75 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Workflow Quick View</h2>
+          <p className="text-xs text-muted-foreground">One-click jump into each operational page</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Link href="/events">
+            <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground uppercase">Events</p>
+                  <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <p className="text-2xl font-bold mt-2">{quickView.events.on_sale_7d}</p>
+                <p className="text-xs text-muted-foreground">on sale in 7d ({quickView.events.on_sale_60d} in 60d)</p>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/autobuy">
+            <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground uppercase">Autobuy</p>
+                  <Ticket className="h-4 w-4 text-violet-500" />
+                </div>
+                <p className="text-2xl font-bold mt-2">{quickView.autobuy.enabled_rules}</p>
+                <p className="text-xs text-muted-foreground">enabled rules ({quickView.autobuy.active_snipe_rules} active snipes)</p>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/accounts">
+            <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground uppercase">Accounts</p>
+                  <Users className="h-4 w-4 text-cyan-500" />
+                </div>
+                <p className="text-2xl font-bold mt-2">{quickView.accounts.active_accounts}</p>
+                <p className="text-xs text-muted-foreground">active across {quickView.accounts.active_platforms} platforms</p>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/sniper">
+            <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground uppercase">Sniper</p>
+                  <Crosshair className="h-4 w-4 text-amber-500" />
+                </div>
+                <p className="text-2xl font-bold mt-2">{quickView.sniper.active_sessions}</p>
+                <p className="text-xs text-muted-foreground">{quickView.sniper.needs_input} waiting for manual input</p>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/orders">
+            <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer h-full">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground uppercase">Orders</p>
+                  <ShoppingCart className="h-4 w-4 text-emerald-500" />
+                </div>
+                <p className="text-2xl font-bold mt-2">${quickView.orders.profit_30d}</p>
+                <p className="text-xs text-muted-foreground">{quickView.orders.orders_30d} orders in last 30d</p>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      </div>
+
       <Tabs defaultValue="leaderboard" className="space-y-4">
         <TabsList className="bg-muted/50">
           <TabsTrigger value="leaderboard">ROI Leaderboard</TabsTrigger>
@@ -250,7 +386,7 @@ export default function Dashboard() {
                         </div>
                         <p className="text-sm text-muted-foreground truncate">{e.name} &middot; {e.venue}</p>
                         <p className="text-xs text-muted-foreground">
-                          On sale {new Date(e.on_sale_date).toLocaleDateString()} ({e.days_until_on_sale === 0 ? "today!" : `${e.days_until_on_sale}d`})
+                          On sale {new Date(e.on_sale_date).toLocaleDateString()} ({e.days_until_on_sale === 0 ? "today!" : `${e.days_until_on_sale}d`}) &middot; Event {new Date(e.date).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
@@ -259,14 +395,14 @@ export default function Dashboard() {
                       <div className="text-right">
                         <p className="text-xl font-bold text-green-500">+{e.estimated_roi}%</p>
                         <p className="text-xs text-muted-foreground">
-                          ${e.projected_entry_price} → ${e.projected_resale_price}
+                          Entry {formatRange(e.projected_entry_range_low, e.projected_entry_range_high)} &middot; Resale {formatRange(e.projected_resale_range_low, e.projected_resale_range_high)}
                         </p>
                         <Badge variant="outline" className={`text-[10px] mt-0.5 ${
                           e.roi_confidence === "high" ? "text-emerald-500 border-emerald-500/30" :
                           e.roi_confidence === "medium" ? "text-amber-500 border-amber-500/30" :
                           "text-muted-foreground"
                         }`}>
-                          {e.roi_confidence} confidence
+                          {e.roi_confidence} ROI &middot; {priceStatusLabel(e.price_estimate_status)}
                         </Badge>
                       </div>
                     </div>
@@ -307,8 +443,9 @@ export default function Dashboard() {
                         <Badge variant="outline" className="mb-1">{e.on_sale_window}</Badge>
                         <p className="text-sm font-bold">+{e.estimated_roi}% ROI</p>
                         <p className="text-xs text-muted-foreground">
-                          Buy ~${e.projected_entry_price} / Sell ~${e.projected_resale_price} ({e.roi_confidence})
+                          Entry {formatRange(e.projected_entry_range_low, e.projected_entry_range_high)} &middot; Resale {formatRange(e.projected_resale_range_low, e.projected_resale_range_high)}
                         </p>
+                        <p className="text-[11px] text-muted-foreground">{e.roi_confidence} ROI confidence &middot; {priceStatusLabel(e.price_estimate_status)}</p>
                       </div>
                     </div>
                   </CardContent>

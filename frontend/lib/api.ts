@@ -58,6 +58,7 @@ export const getUpcomingOpportunities = (params?: Record<string, string>) => {
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   return fetchAPI(`/analytics/upcoming-opportunities${qs}`);
 };
+export const getDashboardQuickView = () => fetchAPI('/analytics/quick-view');
 export const ingestLiveData = (data?: Record<string, unknown>) =>
   fetchAPI('/live/ingest', { method: 'POST', body: JSON.stringify(data || {}) });
 export const syncLiveData = async (data?: Record<string, unknown>) => {

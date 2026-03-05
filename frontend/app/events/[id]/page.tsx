@@ -12,6 +12,17 @@ import DemandBadge from "@/components/DemandBadge";
 import { getEvent, getTickets, getPriceHistory, getBestTimeToBuy, purchaseTicket, getEventReadiness } from "@/lib/api";
 import { Calendar, MapPin, Clock, TrendingUp, TrendingDown, ShoppingCart, Star, ArrowUp, Music, CheckCircle, XCircle, AlertTriangle, CreditCard, Users, Crosshair, Globe, ExternalLink } from "lucide-react";
 
+function formatRange(low?: number | null, high?: number | null, fallback?: number | null) {
+  const l = typeof low === "number" ? Math.round(low) : null;
+  const h = typeof high === "number" ? Math.round(high) : null;
+  if (l === null && h === null) {
+    if (typeof fallback === "number") return `$${Math.round(fallback)}`;
+    return "—";
+  }
+  if (l !== null && h !== null && l !== h) return `$${l} - $${h}`;
+  return `$${l ?? h}`;
+}
+
 export default function EventDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -83,7 +94,11 @@ export default function EventDetailPage() {
             <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />{event.venue}, {event.city}</span>
             <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />{new Date(event.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</span>
             <span className="flex items-center gap-1"><Clock className="h-4 w-4" />{event.time}</span>
+            {event.on_sale_date && (
+              <span className="flex items-center gap-1"><Calendar className="h-4 w-4" />On sale {new Date(event.on_sale_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            )}
           </div>
+          <p className="text-xs text-white/70 mt-2">`On sale` is the ticket drop date. `Event date` is when the event happens.</p>
         </div>
       </div>
 
@@ -91,22 +106,26 @@ export default function EventDetailPage() {
       <div className="grid sm:grid-cols-3 gap-3">
         <Card className="glow-card">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Face Value</p>
-            <p className="text-2xl font-bold mt-1">${event.face_value}</p>
+            <p className="text-xs text-muted-foreground">Face Value Band</p>
+            <p className="text-2xl font-bold mt-1">{formatRange(event.projected_face_range_low, event.projected_face_range_high, event.face_value)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Published face reference</p>
           </CardContent>
         </Card>
         <Card className="glow-card">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Expected Entry Range</p>
-            <p className="text-2xl font-bold mt-1">${event.min_price}</p>
-            <p className="text-xs text-muted-foreground mt-1">Current low ask estimate</p>
+            <p className="text-2xl font-bold mt-1">{formatRange(event.projected_entry_range_low, event.projected_entry_range_high, event.min_price)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Primary + modeled market entry</p>
           </CardContent>
         </Card>
         <Card className="glow-card">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Expected Resale Range</p>
-            <p className="text-2xl font-bold text-green-600 mt-1">${event.min_price} - ${event.max_price}</p>
-            <p className="text-xs text-green-500 mt-1 font-semibold">+{event.resale_potential}% potential ROI</p>
+            <p className="text-2xl font-bold text-green-600 mt-1">{formatRange(event.projected_resale_range_low, event.projected_resale_range_high, event.max_price)}</p>
+            <p className="text-xs text-green-500 mt-1 font-semibold">+{event.estimated_roi ?? event.resale_potential}% potential ROI</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {event.price_estimate_status || "unverified"} &middot; {event.price_estimate_confidence || event.roi_confidence || "low"} confidence
+            </p>
           </CardContent>
         </Card>
       </div>

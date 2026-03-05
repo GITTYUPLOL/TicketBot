@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { getHistoricalComparables } = require('../services/roiProjection');
 
 const PLATFORMS = ['ticketmaster', 'stubhub', 'seatgeek', 'axs'];
 
@@ -40,7 +41,7 @@ router.get('/:eventId', (req, res) => {
   }
 
   // Historical comparables for ROI enrichment
-  const comparables = getHistoricalComparables(event);
+  const comparables = getHistoricalComparables(event, { includeComparableRows: true, cache: new Map() });
 
   // Calculate readiness score (0-100)
   const checks = {
@@ -116,52 +117,5 @@ router.get('/', (req, res) => {
 
   res.json(results);
 });
-
-function getHistoricalComparables(event) {
-  // Try artist match first (highest confidence)
-  let comps = db.prepare(`
-    SELECT artist, venue, genre, event_date, face_value, avg_resale_price, roi_actual, demand_score_at_sale
-    FROM historical_comparables WHERE LOWER(artist) = LOWER(?) ORDER BY event_date DESC LIMIT 5
-  `).all(event.artist);
-
-  const source = comps.length > 0 ? 'artist' : null;
-
-  // Fallback to venue match
-  if (comps.length < 3) {
-    const venueComps = db.prepare(`
-      SELECT artist, venue, genre, event_date, face_value, avg_resale_price, roi_actual, demand_score_at_sale
-      FROM historical_comparables WHERE LOWER(venue) = LOWER(?) AND LOWER(artist) != LOWER(?)
-      ORDER BY event_date DESC LIMIT 5
-    `).all(event.venue, event.artist);
-    comps = comps.concat(venueComps);
-  }
-
-  // Fallback to genre match
-  if (comps.length < 3) {
-    const genreComps = db.prepare(`
-      SELECT artist, venue, genre, event_date, face_value, avg_resale_price, roi_actual, demand_score_at_sale
-      FROM historical_comparables WHERE LOWER(genre) = LOWER(?)
-        AND LOWER(artist) != LOWER(?) AND LOWER(venue) != LOWER(?)
-      ORDER BY roi_actual DESC LIMIT 5
-    `).all(event.genre, event.artist, event.venue);
-    comps = comps.concat(genreComps);
-  }
-
-  if (comps.length === 0) return { available: false, projected_resale: null, confidence: 'low', comparables: [] };
-
-  const avgResale = Math.round(comps.reduce((s, c) => s + (c.avg_resale_price || 0), 0) / comps.length);
-  const avgRoi = Math.round(comps.reduce((s, c) => s + (c.roi_actual || 0), 0) / comps.length);
-  const confidence = source === 'artist' && comps.length >= 3 ? 'high' : comps.length >= 2 ? 'medium' : 'low';
-
-  return {
-    available: true,
-    match_type: source || (comps.length > 0 ? 'genre' : 'none'),
-    projected_resale: avgResale,
-    avg_historical_roi: avgRoi,
-    confidence,
-    sample_size: comps.length,
-    comparables: comps.slice(0, 5),
-  };
-}
 
 module.exports = router;

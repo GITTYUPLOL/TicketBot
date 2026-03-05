@@ -1,46 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const MS_PER_DAY = 86400000;
-
-function getConfidenceLevel(demandScore) {
-  if (demandScore >= 75) return 'high';
-  if (demandScore >= 55) return 'medium';
-  return 'low';
-}
-
-function getDaysUntilOnSale(onSaleDate) {
-  if (!onSaleDate) return null;
-
-  const parsed = new Date(`${onSaleDate}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
-
-  const now = new Date();
-  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return Math.ceil((parsed.getTime() - todayUTC) / MS_PER_DAY);
-}
-
-function getSaleWindow(daysUntilOnSale) {
-  if (daysUntilOnSale === null || daysUntilOnSale < 0) return null;
-  if (daysUntilOnSale <= 7) return '7d';
-  if (daysUntilOnSale <= 14) return '14d';
-  if (daysUntilOnSale <= 30) return '30d';
-  return null;
-}
-
-function getSaleWindowPriority(window) {
-  if (window === '7d') return 1;
-  if (window === '14d') return 2;
-  if (window === '30d') return 3;
-  return 99;
-}
-
-function minimumScoreFromConfidence(confidence) {
-  const normalized = String(confidence || '').trim().toLowerCase();
-  if (normalized === 'high') return 75;
-  if (normalized === 'medium') return 55;
-  return 0;
-}
+const {
+  buildRoiProjection,
+  getDaysUntilOnSale,
+  getOnSaleWindow,
+  getSaleWindowPriority,
+  minimumDemandScoreFromConfidence,
+} = require('../services/roiProjection');
 
 function pushOptionalFilter(filters, params, expression, value, transform = (input) => input) {
   if (value === undefined || value === null || value === '' || value === 'all') return;
@@ -48,31 +15,17 @@ function pushOptionalFilter(filters, params, expression, value, transform = (inp
   params.push(transform(value));
 }
 
-function enrichOpportunity(event) {
-  const projectedEntryPrice = Number(event.min_price || event.face_value || 0);
-  const projectedResalePrice = Math.round(Number(event.max_price || projectedEntryPrice) * 0.85);
-  const estimatedFees = Math.round(projectedEntryPrice * 0.12);
-  const estimatedProfit = projectedResalePrice - projectedEntryPrice - estimatedFees;
-  const estimatedRoi = projectedEntryPrice > 0
-    ? Math.round((estimatedProfit / projectedEntryPrice) * 100)
-    : 0;
+function enrichOpportunity(event, projectionCache) {
+  const projection = buildRoiProjection(event, { cache: projectionCache instanceof Map ? projectionCache : undefined });
   const daysUntilOnSale = getDaysUntilOnSale(event.on_sale_date);
-  const onSaleWindow = getSaleWindow(daysUntilOnSale);
+  const onSaleWindow = getOnSaleWindow(daysUntilOnSale);
 
   return {
     ...event,
-    projected_entry_price: projectedEntryPrice,
-    projected_resale_price: projectedResalePrice,
-    estimated_fees: estimatedFees,
-    estimated_profit: estimatedProfit,
-    estimated_roi: estimatedRoi,
-    roi_confidence: getConfidenceLevel(event.demand_score),
+    ...projection,
     days_until_on_sale: daysUntilOnSale,
     on_sale_window: onSaleWindow,
     sale_window_priority: getSaleWindowPriority(onSaleWindow),
-    resale_potential: event.face_value
-      ? Math.round(((event.max_price - event.face_value) / event.face_value) * 100)
-      : 0,
   };
 }
 
@@ -87,7 +40,7 @@ router.get('/upcoming-opportunities', (req, res) => {
     ? Math.min(requestedUpcomingWindow, 365)
     : 7;
   const minRoi = Number(req.query.min_roi);
-  const minConfidence = minimumScoreFromConfidence(req.query.min_confidence);
+  const minConfidence = minimumDemandScoreFromConfidence(req.query.min_confidence);
   const filters = [
     'on_sale_date IS NOT NULL',
     "date(date) >= date('now')",
@@ -107,9 +60,10 @@ router.get('/upcoming-opportunities', (req, res) => {
     FROM events
     WHERE ${filters.join(' AND ')}
   `).all(...params);
+  const projectionCache = new Map();
 
   const filteredEvents = events
-    .map(enrichOpportunity)
+    .map((event) => enrichOpportunity(event, projectionCache))
     .filter((event) => event.on_sale_window)
     .filter((event) => event.demand_score >= minConfidence)
     .filter((event) => !Number.isFinite(minRoi) || event.estimated_roi >= minRoi);
@@ -140,6 +94,82 @@ router.get('/upcoming-opportunities', (req, res) => {
   });
 });
 
+// GET /api/analytics/quick-view - cross-workflow snapshot for dashboard
+router.get('/quick-view', (_req, res) => {
+  const events = db.prepare(`
+    SELECT
+      COUNT(*) AS total_events,
+      SUM(CASE WHEN date(on_sale_date) >= date('now') AND date(on_sale_date) <= date('now', '+7 days') AND date(date) >= date('now') THEN 1 ELSE 0 END) AS on_sale_7d,
+      SUM(CASE WHEN date(on_sale_date) >= date('now') AND date(on_sale_date) <= date('now', '+30 days') AND date(date) >= date('now') THEN 1 ELSE 0 END) AS on_sale_30d,
+      SUM(CASE WHEN date(on_sale_date) >= date('now') AND date(on_sale_date) <= date('now', '+60 days') AND date(date) >= date('now') THEN 1 ELSE 0 END) AS on_sale_60d
+    FROM events
+  `).get();
+
+  const autobuy = db.prepare(`
+    SELECT
+      COUNT(*) AS total_rules,
+      SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled_rules,
+      SUM(CASE WHEN enabled = 1 AND mode = 'snipe' THEN 1 ELSE 0 END) AS active_snipe_rules
+    FROM autobuy_rules
+  `).get();
+
+  const accounts = db.prepare(`
+    SELECT
+      COUNT(*) AS total_accounts,
+      SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_accounts,
+      COUNT(DISTINCT CASE WHEN status = 'active' THEN platform END) AS active_platforms
+    FROM accounts
+  `).get();
+
+  const orders = db.prepare(`
+    SELECT
+      COUNT(*) AS total_orders,
+      SUM(CASE WHEN date(created_at) >= date('now', '-30 days') THEN 1 ELSE 0 END) AS orders_30d,
+      ROUND(SUM(CASE WHEN date(created_at) >= date('now', '-30 days') THEN total ELSE 0 END), 2) AS spend_30d,
+      ROUND(SUM(CASE WHEN date(created_at) >= date('now', '-30 days') THEN COALESCE(profit, 0) ELSE 0 END), 2) AS profit_30d
+    FROM orders
+  `).get();
+
+  const sniper = db.prepare(`
+    SELECT
+      COUNT(*) AS total_sessions,
+      SUM(CASE WHEN needs_input = 1 THEN 1 ELSE 0 END) AS needs_input,
+      SUM(CASE WHEN status IN ('starting', 'running', 'watching', 'attempting_checkout') THEN 1 ELSE 0 END) AS active_sessions
+    FROM snipe_sessions
+  `).get();
+
+  res.json({
+    events: {
+      total: Number(events?.total_events || 0),
+      on_sale_7d: Number(events?.on_sale_7d || 0),
+      on_sale_30d: Number(events?.on_sale_30d || 0),
+      on_sale_60d: Number(events?.on_sale_60d || 0),
+    },
+    autobuy: {
+      total_rules: Number(autobuy?.total_rules || 0),
+      enabled_rules: Number(autobuy?.enabled_rules || 0),
+      active_snipe_rules: Number(autobuy?.active_snipe_rules || 0),
+    },
+    accounts: {
+      total_accounts: Number(accounts?.total_accounts || 0),
+      active_accounts: Number(accounts?.active_accounts || 0),
+      active_platforms: Number(accounts?.active_platforms || 0),
+    },
+    orders: {
+      total_orders: Number(orders?.total_orders || 0),
+      orders_30d: Number(orders?.orders_30d || 0),
+      spend_30d: Number(orders?.spend_30d || 0),
+      profit_30d: Number(orders?.profit_30d || 0),
+    },
+    sniper: {
+      total_sessions: Number(sniper?.total_sessions || 0),
+      active_sessions: Number(sniper?.active_sessions || 0),
+      needs_input: Number(sniper?.needs_input || 0),
+    },
+    generated_at: new Date().toISOString(),
+  });
+});
+
 // GET /api/analytics/trending
 router.get('/trending', (req, res) => {
   const events = db.prepare(`
@@ -152,7 +182,8 @@ router.get('/trending', (req, res) => {
     LIMIT 10
   `).all();
 
-  res.json(events.map(enrichOpportunity));
+  const projectionCache = new Map();
+  res.json(events.map((event) => enrichOpportunity(event, projectionCache)));
 });
 
 // GET /api/analytics/price-history/:eventId
@@ -265,8 +296,8 @@ router.get('/roi-calculator', (req, res) => {
     ORDER BY ((max_price - min_price) * 1.0 / min_price) DESC
     LIMIT 10
   `).all();
-
-  res.json(events.map(enrichOpportunity));
+  const projectionCache = new Map();
+  res.json(events.map((event) => enrichOpportunity(event, projectionCache)));
 });
 
 module.exports = router;

@@ -28,6 +28,14 @@ interface Event {
   days_until_on_sale?: number | null;
   estimated_roi?: number;
   roi_confidence?: "high" | "medium" | "low";
+  price_estimate_status?: "blended" | "market_only" | "historical_modeled" | "unverified";
+  price_estimate_confidence?: "high" | "medium" | "low";
+  projected_entry_range_low?: number | null;
+  projected_entry_range_high?: number | null;
+  projected_face_range_low?: number | null;
+  projected_face_range_high?: number | null;
+  projected_resale_range_low?: number | null;
+  projected_resale_range_high?: number | null;
 }
 
 const genreGradients: Record<string, string> = {
@@ -72,6 +80,31 @@ export default function EventCard({ event }: { event: Event }) {
       : event.roi_confidence === "medium"
         ? "text-amber-600"
         : "text-muted-foreground";
+  const estimateStatus =
+    event.price_estimate_status === "blended" ? "Blend model" :
+    event.price_estimate_status === "market_only" ? "Market model" :
+    event.price_estimate_status === "historical_modeled" ? "Historical model" :
+    "Unverified";
+  const estimateStatusClass =
+    event.price_estimate_status === "blended"
+      ? "border-emerald-400/40 text-emerald-600 dark:text-emerald-400"
+      : event.price_estimate_status === "market_only"
+        ? "border-cyan-400/40 text-cyan-600 dark:text-cyan-300"
+        : event.price_estimate_status === "historical_modeled"
+          ? "border-amber-400/40 text-amber-600 dark:text-amber-400"
+          : "border-border text-muted-foreground";
+  const formatRange = (low?: number | null, high?: number | null) => {
+    const normalizedLow = typeof low === "number" ? Math.round(low) : null;
+    const normalizedHigh = typeof high === "number" ? Math.round(high) : null;
+    if (normalizedLow === null && normalizedHigh === null) return "—";
+    if (normalizedLow !== null && normalizedHigh !== null && normalizedLow !== normalizedHigh) {
+      return `$${normalizedLow}-$${normalizedHigh}`;
+    }
+    return `$${normalizedLow ?? normalizedHigh}`;
+  };
+  const entryRange = formatRange(event.projected_entry_range_low, event.projected_entry_range_high);
+  const faceRange = formatRange(event.projected_face_range_low, event.projected_face_range_high);
+  const resaleRange = formatRange(event.projected_resale_range_low, event.projected_resale_range_high);
 
   return (
     <Link href={`/events/${event.id}`}>
@@ -108,7 +141,7 @@ export default function EventCard({ event }: { event: Event }) {
           </div>
           <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3 shrink-0" />
-            <span>{new Date(event.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            <span>Event {new Date(event.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
           </div>
           {event.on_sale_date && (
             <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
@@ -120,11 +153,12 @@ export default function EventCard({ event }: { event: Event }) {
             </div>
           )}
 
-          <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
+          <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50 gap-2">
             <div>
-              <p className="text-xs text-muted-foreground flex items-center gap-1"><Ticket className="h-3 w-3" /> Expected Resale</p>
-              <p className="text-sm font-bold">${event.min_price} - ${event.max_price}</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Face value ${event.face_value}</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><Ticket className="h-3 w-3" /> Modeled Price Bands</p>
+              <p className="text-sm font-semibold">Entry {entryRange}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Resale {resaleRange}</p>
+              <p className="text-[11px] text-muted-foreground">Face band {faceRange}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
               <DemandBadge score={event.demand_score} />
@@ -134,6 +168,9 @@ export default function EventCard({ event }: { event: Event }) {
                   {event.roi_confidence} confidence
                 </span>
               )}
+              <Badge variant="outline" className={`text-[10px] uppercase tracking-wide font-semibold ${estimateStatusClass}`}>
+                {estimateStatus}
+              </Badge>
             </div>
           </div>
         </CardContent>
