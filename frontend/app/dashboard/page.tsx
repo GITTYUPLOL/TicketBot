@@ -1,0 +1,353 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import PriceChart from "@/components/PriceChart";
+import DemandBadge from "@/components/DemandBadge";
+import { getUpcomingOpportunities, getMarketHeatmap, getPriceHistory, ingestLiveData, getBatchReadiness } from "@/lib/api";
+import { TrendingUp, DollarSign, BarChart3, Activity, CalendarClock, Music, Ticket, Zap, CheckCircle, AlertTriangle, XCircle, Shield } from "lucide-react";
+import Link from "next/link";
+
+type SaleWindow = "7d" | "14d" | "30d";
+
+interface UpcomingOpportunity {
+  id: number;
+  name: string;
+  artist: string;
+  venue: string;
+  city: string;
+  date: string;
+  on_sale_date: string;
+  demand_score: number;
+  projected_entry_price: number;
+  projected_resale_price: number;
+  estimated_roi: number;
+  roi_confidence: "high" | "medium" | "low";
+  days_until_on_sale: number;
+  on_sale_window: SaleWindow;
+}
+
+interface WindowStats { window_7d: number; window_14d: number; window_30d: number; }
+interface UpcomingResponse { windows: WindowStats; opportunities: UpcomingOpportunity[]; }
+interface PricePoint { date: string; avg_price: number; min_price: number; max_price: number; volume: number; }
+interface HeatmapGenre { genre: string; event_count: number; avg_demand: number; avg_markup: number; avg_roi: number; }
+interface HeatmapVenue { venue: string; city: string; event_count: number; avg_demand: number; avg_max_price: number; }
+interface HeatmapData { genres: HeatmapGenre[]; venues: HeatmapVenue[]; }
+interface ReadinessItem { event_id: number; readiness_score: number; readiness_status: string; has_accounts: boolean; has_card: boolean; has_rule: boolean; has_selectors: boolean; }
+
+function ReadinessIndicator({ readiness }: { readiness?: ReadinessItem }) {
+  if (!readiness) return <span className="text-xs text-muted-foreground">...</span>;
+  const { readiness_score, readiness_status } = readiness;
+  const Icon = readiness_status === "go" ? CheckCircle : readiness_status === "partial" ? AlertTriangle : XCircle;
+  const color = readiness_status === "go" ? "text-green-500" : readiness_status === "partial" ? "text-amber-500" : "text-red-500";
+  const bg = readiness_status === "go" ? "bg-green-500/10" : readiness_status === "partial" ? "bg-amber-500/10" : "bg-red-500/10";
+  return (
+    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${color} ${bg}`}>
+      <Icon className="h-3 w-3" />
+      {readiness_score}%
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const [upcoming, setUpcoming] = useState<UpcomingOpportunity[]>([]);
+  const [windowStats, setWindowStats] = useState<WindowStats>({ window_7d: 0, window_14d: 0, window_30d: 0 });
+  const [heatmap, setHeatmap] = useState<HeatmapData>({ genres: [], venues: [] });
+  const [readinessMap, setReadinessMap] = useState<Record<number, ReadinessItem>>({});
+  const [selectedChart, setSelectedChart] = useState<number | null>(null);
+  const [chartData, setChartData] = useState<PricePoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [environment, setEnvironment] = useState<"live" | "test">("test");
+  const [syncingLive, setSyncingLive] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string>("");
+  const roiRanked = [...upcoming].sort((a, b) => b.estimated_roi - a.estimated_roi);
+  const topRoiEvent = roiRanked[0];
+
+  useEffect(() => {
+    Promise.all([getUpcomingOpportunities(), getMarketHeatmap()])
+      .then(async ([upcomingResponse, h]) => {
+        const typedUpcoming = upcomingResponse as UpcomingResponse;
+        const typedHeatmap = h as HeatmapData;
+        const opportunities = typedUpcoming?.opportunities || [];
+        setUpcoming(opportunities);
+        setWindowStats(typedUpcoming?.windows || { window_7d: 0, window_14d: 0, window_30d: 0 });
+        setHeatmap(typedHeatmap);
+        if (opportunities.length > 0) {
+          setSelectedChart(opportunities[0].id);
+          getPriceHistory(opportunities[0].id).then((data) => setChartData(data as PricePoint[]));
+          // Fetch readiness for all upcoming events
+          const ids = opportunities.map(o => o.id);
+          const readiness = await getBatchReadiness(ids) as ReadinessItem[];
+          const map: Record<number, ReadinessItem> = {};
+          readiness.forEach(r => { map[r.event_id] = r; });
+          setReadinessMap(map);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const currentEnv = localStorage.getItem("ticketbot-env") === "live" ? "live" : "test";
+    setEnvironment(currentEnv);
+  }, []);
+
+  const loadChart = (eventId: number) => {
+    setSelectedChart(eventId);
+    getPriceHistory(eventId).then((data) => setChartData(data as PricePoint[]));
+  };
+
+  const handleLiveSync = async () => {
+    setSyncingLive(true);
+    setSyncMessage("");
+    try {
+      const summary = await ingestLiveData({ max_pages: 10, days_ahead: 45 }) as {
+        totals?: { fetched?: number; inserted?: number; updated?: number; errors?: number };
+        providers?: Array<{ provider: string; errors: string[] }>;
+      };
+      const totals = summary.totals || {};
+      const providerErrors = (summary.providers || []).flatMap((provider) => provider.errors || []);
+      if ((totals.inserted || 0) > 0 || (totals.updated || 0) > 0) {
+        const baseMessage = `Synced ${totals.fetched || 0} events: +${totals.inserted || 0} inserted, ${totals.updated || 0} updated`;
+        setSyncMessage(providerErrors.length > 0 ? `${baseMessage}. Note: ${providerErrors[0]}` : baseMessage);
+      } else {
+        setSyncMessage(providerErrors[0] || "No live events were synced");
+      }
+      const refreshed = await getUpcomingOpportunities();
+      const typed = refreshed as UpcomingResponse;
+      setUpcoming(typed.opportunities || []);
+      setWindowStats(typed.windows || { window_7d: 0, window_14d: 0, window_30d: 0 });
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "Live sync failed");
+    } finally {
+      setSyncingLive(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-3">
+        <Music className="h-8 w-8 text-primary animate-bounce" />
+        <p className="text-muted-foreground animate-pulse">Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  // Count readiness statuses
+  const goCount = Object.values(readinessMap).filter(r => r.readiness_status === "go").length;
+  const partialCount = Object.values(readinessMap).filter(r => r.readiness_status === "partial").length;
+  const notReadyCount = Object.values(readinessMap).filter(r => r.readiness_status === "not_ready").length;
+
+  return (
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      {/* Hero header */}
+      <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-fuchsia-600 via-violet-600 to-indigo-600 p-6 text-white">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDM0djZoLTJ2LTZoMnptMC0yMHYyaC0ydi0yaDJ6bTAtOHY0aC0ydi00aDJ6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-30" />
+        <div className="relative">
+          <div className="flex items-center gap-2 mb-1">
+            <Zap className="h-5 w-5" />
+            <span className="text-sm font-medium text-white/80">ROI Leaderboard + Snipe Readiness</span>
+          </div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-sm text-white/70 mt-1">Research upcoming drops, pick winners, queue snipes</p>
+          {environment === "live" && (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button size="sm" onClick={handleLiveSync} disabled={syncingLive}
+                className="bg-white/15 border border-white/30 text-white hover:bg-white/20" variant="secondary">
+                {syncingLive ? "Syncing live data..." : "Sync Live Data"}
+              </Button>
+              {syncMessage && <p className="text-xs text-white/85">{syncMessage}</p>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Stats cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm"><CalendarClock className="h-4 w-4 text-sky-500" /> Next 7d</div>
+            <p className="text-3xl font-bold mt-1">{windowStats.window_7d}</p>
+            <p className="text-xs text-muted-foreground">on-sale drops</p>
+          </CardContent>
+        </Card>
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm"><DollarSign className="h-4 w-4 text-green-500" /> Top ROI</div>
+            <p className="text-3xl font-bold mt-1 text-green-500">{topRoiEvent?.estimated_roi || 0}%</p>
+            <p className="text-xs text-muted-foreground">{topRoiEvent?.artist || "—"}</p>
+          </CardContent>
+        </Card>
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm"><CheckCircle className="h-4 w-4 text-green-500" /> Ready</div>
+            <p className="text-3xl font-bold mt-1 text-green-500">{goCount}</p>
+            <p className="text-xs text-muted-foreground">events go</p>
+          </CardContent>
+        </Card>
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm"><AlertTriangle className="h-4 w-4 text-amber-500" /> Partial</div>
+            <p className="text-3xl font-bold mt-1 text-amber-500">{partialCount}</p>
+            <p className="text-xs text-muted-foreground">need setup</p>
+          </CardContent>
+        </Card>
+        <Card className="glow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm"><Ticket className="h-4 w-4 text-violet-500" /> 14d + 30d</div>
+            <p className="text-3xl font-bold mt-1">{windowStats.window_14d + windowStats.window_30d}</p>
+            <p className="text-xs text-muted-foreground">pipeline</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="leaderboard" className="space-y-4">
+        <TabsList className="bg-muted/50">
+          <TabsTrigger value="leaderboard">ROI Leaderboard</TabsTrigger>
+          <TabsTrigger value="on-sale">On-Sale Pipeline</TabsTrigger>
+          <TabsTrigger value="prices">Price Trends</TabsTrigger>
+          <TabsTrigger value="heatmap">Heatmap</TabsTrigger>
+        </TabsList>
+
+        {/* ROI Leaderboard - default tab */}
+        <TabsContent value="leaderboard" className="space-y-2">
+          {roiRanked.length === 0 && (
+            <Card className="glow-card"><CardContent className="p-5 text-sm text-muted-foreground">No upcoming opportunities found.</CardContent></Card>
+          )}
+          {roiRanked.map((e, i) => {
+            const r = readinessMap[e.id];
+            return (
+              <Link key={e.id} href={`/events/${e.id}`}>
+                <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer group">
+                  <CardContent className="p-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <span className="text-2xl font-bold text-muted-foreground/30 w-8 shrink-0">#{i + 1}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold group-hover:text-primary transition-colors truncate">{e.artist}</p>
+                          <ReadinessIndicator readiness={r} />
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">{e.name} &middot; {e.venue}</p>
+                        <p className="text-xs text-muted-foreground">
+                          On sale {new Date(e.on_sale_date).toLocaleDateString()} ({e.days_until_on_sale === 0 ? "today!" : `${e.days_until_on_sale}d`})
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <DemandBadge score={e.demand_score} />
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-green-500">+{e.estimated_roi}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          ${e.projected_entry_price} → ${e.projected_resale_price}
+                        </p>
+                        <Badge variant="outline" className={`text-[10px] mt-0.5 ${
+                          e.roi_confidence === "high" ? "text-emerald-500 border-emerald-500/30" :
+                          e.roi_confidence === "medium" ? "text-amber-500 border-amber-500/30" :
+                          "text-muted-foreground"
+                        }`}>
+                          {e.roi_confidence} confidence
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </TabsContent>
+
+        {/* On-Sale Pipeline */}
+        <TabsContent value="on-sale" className="space-y-3">
+          {upcoming.length === 0 && (
+            <Card className="glow-card"><CardContent className="p-5 text-sm text-muted-foreground">No upcoming opportunities found.</CardContent></Card>
+          )}
+          {upcoming.map((e, i) => {
+            const r = readinessMap[e.id];
+            return (
+              <Link key={e.id} href={`/events/${e.id}`}>
+                <Card className="glow-card hover:shadow-lg transition-all duration-200 cursor-pointer mb-3 group">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <span className="text-2xl font-bold text-muted-foreground/30 w-8">#{i + 1}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold group-hover:text-primary transition-colors">{e.artist}</p>
+                          <ReadinessIndicator readiness={r} />
+                        </div>
+                        <p className="text-sm text-muted-foreground">{e.name} &middot; {e.venue}</p>
+                        <p className="text-xs text-muted-foreground">
+                          On sale {new Date(e.on_sale_date).toLocaleDateString()} ({e.days_until_on_sale === 0 ? "today" : `in ${e.days_until_on_sale}d`}) &middot; Event {new Date(e.date).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <DemandBadge score={e.demand_score} />
+                      <div className="text-right">
+                        <Badge variant="outline" className="mb-1">{e.on_sale_window}</Badge>
+                        <p className="text-sm font-bold">+{e.estimated_roi}% ROI</p>
+                        <p className="text-xs text-muted-foreground">
+                          Buy ~${e.projected_entry_price} / Sell ~${e.projected_resale_price} ({e.roi_confidence})
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </TabsContent>
+
+        <TabsContent value="prices">
+          <Card className="glow-card">
+            <CardContent className="p-4">
+              <div className="flex gap-2 flex-wrap mb-4">
+                {upcoming.slice(0, 6).map((e) => (
+                  <Badge key={e.id} variant={selectedChart === e.id ? "default" : "outline"}
+                    className={`cursor-pointer transition-all ${selectedChart === e.id ? "bg-gradient-to-r from-fuchsia-600 to-violet-600 border-0" : ""}`}
+                    onClick={() => loadChart(e.id)}>
+                    {e.artist}
+                  </Badge>
+                ))}
+              </div>
+              {chartData.length > 0 && <PriceChart data={chartData} height={350} />}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="heatmap">
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card className="glow-card">
+              <CardContent className="p-4">
+                <h3 className="font-semibold mb-3 flex items-center gap-2"><Music className="h-4 w-4 text-primary" /> Genre Performance</h3>
+                <div className="space-y-2">
+                  {heatmap.genres.map((g) => (
+                    <div key={g.genre} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
+                      <div><p className="font-medium text-sm">{g.genre}</p><p className="text-xs text-muted-foreground">{g.event_count} events</p></div>
+                      <div className="text-right"><p className="text-sm font-bold text-green-500">{g.avg_roi}% avg ROI</p><DemandBadge score={g.avg_demand} /></div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="glow-card">
+              <CardContent className="p-4">
+                <h3 className="font-semibold mb-3 flex items-center gap-2"><Activity className="h-4 w-4 text-primary" /> Top Venues</h3>
+                <div className="space-y-2">
+                  {heatmap.venues.map((v) => (
+                    <div key={v.venue} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
+                      <div><p className="font-medium text-sm">{v.venue}</p><p className="text-xs text-muted-foreground">{v.city}</p></div>
+                      <div className="text-right"><p className="text-sm font-bold">${v.avg_max_price} avg</p><DemandBadge score={v.avg_demand} /></div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
