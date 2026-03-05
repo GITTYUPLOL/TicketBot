@@ -85,6 +85,39 @@ sudo systemctl restart ticketbot-backend ticketbot-frontend nginx
 sudo systemctl enable ticketbot-backend ticketbot-frontend nginx
 ```
 
+## One-Command Local Push/Pull Deploy
+
+Run from local repo root:
+
+```bash
+npm run deploy:vm -- "feat: your commit message"
+```
+
+Behavior:
+- Runs `git add -A`
+- Commits all current local edits (if any)
+- Pushes `main` to GitHub
+- SSHes into VM and runs `git pull --ff-only origin main`
+- Reinstalls deps only when lockfiles change
+- Rebuilds frontend only when `frontend/` changed
+- Restarts `ticketbot-backend`, `ticketbot-frontend`, `nginx`
+- Runs health checks on `/dashboard` and `/api/proxy/health`
+
+Optional env overrides:
+
+```bash
+TICKETBOT_VM_HOST=azureuser@172.174.246.226 \
+TICKETBOT_SSH_KEY=~/.ssh/mySSHKey \
+TICKETBOT_REMOTE_REPO=/opt/ticketbot \
+npm run deploy:vm -- "chore: deploy"
+```
+
+Local smoke-test for deploy contract:
+
+```bash
+npm run deploy:vm:smoke
+```
+
 ## Required Smoke Checks
 
 Run all checks after each deploy:
