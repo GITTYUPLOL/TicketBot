@@ -87,7 +87,7 @@ export default function EventsPage() {
   const [country, setCountry] = useState("all");
   const [sourceMarket, setSourceMarket] = useState("all");
   const [sort, setSort] = useState("on_sale");
-  const [upcomingWindow, setUpcomingWindow] = useState("7");
+  const [upcomingWindow, setUpcomingWindow] = useState("all");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,8 +172,9 @@ export default function EventsPage() {
     setRefreshMessage("");
     try {
       const response = await syncLiveData({
+        force: true,
         ttl_minutes: 30,
-        max_pages: 12,
+        max_pages: 5,
         days_ahead: 60,
         categories: ["concerts", "sports", "theater", "comedy", "family"],
       }) as {

@@ -10,6 +10,7 @@ try {
 
 const TICKETMASTER_BASE_URL = 'https://app.ticketmaster.com/discovery/v2/events.json';
 const TICKETMASTER_DISCOVER_BASE_URL = 'https://www.ticketmaster.com/discover';
+const PREDICTHQ_BASE_URL = 'https://api.predicthq.com/v1/events/';
 const MS_PER_DAY = 86400000;
 
 const CATEGORY_TO_SEGMENT = {
@@ -31,6 +32,15 @@ const DISCOVER_CATEGORY_PATHS = {
 };
 
 const DEFAULT_CATEGORY_SET = ['concerts', 'sports', 'theater', 'comedy', 'family'];
+const CATEGORY_TO_PREDICTHQ = {
+  concerts: 'concerts',
+  sports: 'sports',
+  theater: 'performing-arts',
+  comedy: 'performing-arts',
+  family: 'community',
+  festivals: 'festivals',
+  other: 'community',
+};
 
 const LEAGUE_PATTERNS = [
   ['NFL', /\bnfl\b|national football league|super bowl|preseason/i],
@@ -167,6 +177,14 @@ function mapCategoriesToSegments(categories) {
   return [...new Set(segments)];
 }
 
+function mapCategoriesToPredictHQ(categories) {
+  const normalized = normalizeCategories(categories);
+  const mapped = normalized
+    .map((category) => CATEGORY_TO_PREDICTHQ[category] || 'community')
+    .filter(Boolean);
+  return [...new Set(mapped)];
+}
+
 function categoryLabel(category) {
   if (category === 'concerts') return 'Music';
   if (category === 'sports') return 'Sports';
@@ -222,6 +240,16 @@ function deriveCategoryFromGenre(genre, fallbackCategory = 'other') {
     return 'concerts';
   }
   return normalizeCategory(fallbackCategory);
+}
+
+function deriveCategoryFromPredictHQ(category) {
+  const normalized = String(category || '').trim().toLowerCase();
+  if (normalized === 'sports') return 'sports';
+  if (normalized === 'concerts') return 'concerts';
+  if (normalized === 'performing-arts') return 'theater';
+  if (normalized === 'festivals') return 'festivals';
+  if (normalized === 'community') return 'family';
+  return 'other';
 }
 
 function detectLeague(...parts) {
@@ -441,6 +469,122 @@ function toTicketbotEventFromSeatGeek(seatGeekEvent) {
   };
 }
 
+function toTicketbotEventFromPredictHQ(predicthqEvent) {
+  const eventDate = toIsoDate(predicthqEvent?.start || predicthqEvent?.start_local);
+  if (!eventDate) return null;
+
+  const venueEntity = Array.isArray(predicthqEvent?.entities)
+    ? predicthqEvent.entities.find((entity) => entity?.type === 'venue')
+    : null;
+  const primaryEntity = Array.isArray(predicthqEvent?.entities)
+    ? predicthqEvent.entities.find((entity) => entity?.type !== 'venue')
+    : null;
+
+  const geoAddress = predicthqEvent?.geo?.address || {};
+  const cityName = geoAddress.locality || 'Unknown';
+  const region = geoAddress.region || '';
+  const city = region ? `${cityName}, ${region}` : cityName;
+  const countryCode = normalizeCountryCode(predicthqEvent?.country || geoAddress.country_code);
+
+  const category = deriveCategoryFromPredictHQ(predicthqEvent?.category);
+  const genre = categoryLabel(category);
+  const league = detectLeague(predicthqEvent?.title, primaryEntity?.name, predicthqEvent?.category);
+
+  const baseline = inferFaceValue(genre);
+  const rank = Number(predicthqEvent?.local_rank || predicthqEvent?.rank || 50);
+  const scaled = clamp(rank, 20, 95) / 100;
+  const faceValue = Math.max(25, Math.round(baseline * (0.8 + scaled)));
+  const minPrice = Math.max(25, Math.round(faceValue * 0.85));
+  const maxPrice = Math.max(minPrice + 10, Math.round(faceValue * 1.45));
+  const demandScore = Math.round(clamp(rank, 35, 95) * 10) / 10;
+
+  return {
+    source: 'PredictHQ',
+    source_provider: 'predicthq_events',
+    source_market: 'signal',
+    source_event_id: predicthqEvent?.id || null,
+    name: predicthqEvent?.title || 'Unnamed Event',
+    artist: primaryEntity?.name || predicthqEvent?.title || 'Unknown Artist',
+    venue: venueEntity?.name || predicthqEvent?.geo?.address?.formatted_address || 'Unknown Venue',
+    city,
+    country_code: countryCode,
+    date: eventDate,
+    time: toLocalTime(predicthqEvent?.start_local || predicthqEvent?.start),
+    category,
+    subcategory: predicthqEvent?.category || null,
+    league,
+    genre,
+    image_url: null,
+    face_value: faceValue,
+    min_price: minPrice,
+    max_price: maxPrice,
+    currency: 'USD',
+    demand_score: demandScore,
+    trending: demandScore >= 75 ? 1 : 0,
+    on_sale_date: eventDate,
+  };
+}
+
+async function fetchPredictHQEvents(options) {
+  const token = options.predictHqToken || process.env.PREDICTHQ_ACCESS_TOKEN;
+  if (!token) {
+    return {
+      events: [],
+      pagesFetched: 0,
+      errors: ['PREDICTHQ_ACCESS_TOKEN not set'],
+    };
+  }
+
+  const maxPages = clamp(Number(options.maxPages) || 8, 1, 50);
+  const perPage = clamp(Number(options.size) || 100, 1, 100);
+  const daysAhead = clamp(Number(options.daysAhead) || 60, 1, 365);
+  const categories = mapCategoriesToPredictHQ(options.categories);
+  const countryCodes = normalizeCountryCodes(options.countryCodes || options.countryCode);
+
+  const startDate = new Date().toISOString().split('T')[0];
+  const endDate = new Date(Date.now() + daysAhead * MS_PER_DAY).toISOString().split('T')[0];
+
+  const events = [];
+  let pagesFetched = 0;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const params = new URLSearchParams({
+      limit: String(perPage),
+      offset: String(page * perPage),
+      'active.gte': startDate,
+      'active.lte': endDate,
+      category: categories.join(','),
+    });
+
+    if (countryCodes[0]) params.set('country', countryCodes[0]);
+
+    const response = await fetch(`${PREDICTHQ_BASE_URL}?${params.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      return {
+        events,
+        pagesFetched,
+        errors: [`PredictHQ API error ${response.status}: ${body.slice(0, 300)}`],
+      };
+    }
+
+    const payload = await response.json();
+    const pageEvents = Array.isArray(payload?.results) ? payload.results : [];
+    pagesFetched += 1;
+    events.push(...pageEvents);
+
+    if (pageEvents.length < perPage) break;
+  }
+
+  return { events, pagesFetched, errors: [] };
+}
+
 async function fetchTicketmasterEvents(options) {
   const {
     apiKey,
@@ -453,7 +597,10 @@ async function fetchTicketmasterEvents(options) {
   } = options;
 
   const normalizedSize = clamp(Number(size) || 200, 1, 200);
-  const normalizedPages = clamp(Number(maxPages) || 8, 1, 80);
+  const requestedPages = clamp(Number(maxPages) || 8, 1, 80);
+  // Ticketmaster Discovery enforces (page * size) < 1000. Keep us under that ceiling.
+  const maxPagesByDepth = Math.max(1, Math.floor(999 / normalizedSize));
+  const normalizedPages = Math.min(requestedPages, maxPagesByDepth);
   const normalizedDays = clamp(Number(daysAhead) || 30, 1, 365);
   const startDateTime = toTicketmasterDateTime(Date.now());
   const endDateTime = toTicketmasterDateTime(Date.now() + normalizedDays * MS_PER_DAY);
@@ -939,6 +1086,65 @@ async function ingestSeatGeekProvider(options) {
   return summary;
 }
 
+async function ingestPredictHQProvider(options) {
+  const categories = normalizeCategories(options.categories);
+  const token = options.predictHqToken || process.env.PREDICTHQ_ACCESS_TOKEN;
+
+  const summary = {
+    provider: 'predicthq_events',
+    fetched: 0,
+    normalized: 0,
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    pages_fetched: 0,
+    categories,
+    errors: [],
+    warnings: [],
+  };
+
+  if (!token) {
+    summary.warnings.push('PREDICTHQ_ACCESS_TOKEN not set; predicthq_events skipped');
+    return summary;
+  }
+
+  try {
+    const result = await fetchPredictHQEvents({
+      ...options,
+      predictHqToken: token,
+      categories,
+      daysAhead: options.daysAhead || 60,
+      maxPages: options.maxPages || 8,
+      size: options.size || 100,
+    });
+
+    summary.fetched = Number(result?.events?.length || 0);
+    summary.pages_fetched = Number(result?.pagesFetched || 0);
+    if (Array.isArray(result?.errors) && result.errors.length > 0) {
+      summary.errors.push(...result.errors);
+    }
+
+    const normalized = (result?.events || [])
+      .map(toTicketbotEventFromPredictHQ)
+      .filter((event) => event && event.on_sale_date);
+
+    const categoryAllowList = new Set(categories);
+    const filtered = normalized.filter((event) => categoryAllowList.has(event.category));
+
+    summary.normalized = filtered.length;
+    summary.skipped += summary.fetched - summary.normalized;
+
+    const writes = upsertEventData(filtered);
+    summary.inserted += writes.inserted;
+    summary.updated += writes.updated;
+    summary.skipped += writes.skipped;
+  } catch (error) {
+    summary.errors.push(error.message || 'PredictHQ provider failed');
+  }
+
+  return summary;
+}
+
 async function ingestLiveData(options = {}) {
   const environment = db.getCurrentEnvironment();
   if (environment !== 'live') {
@@ -954,6 +1160,7 @@ async function ingestLiveData(options = {}) {
 
   const defaultProviders = ['ticketmaster_discovery', 'ticketmaster_web'];
   if (process.env.SEATGEEK_CLIENT_ID) defaultProviders.push('seatgeek_resale');
+  if (process.env.PREDICTHQ_ACCESS_TOKEN) defaultProviders.push('predicthq_events');
 
   const providers = Array.isArray(options.providers) && options.providers.length
     ? options.providers
@@ -971,6 +1178,11 @@ async function ingestLiveData(options = {}) {
 
   if (providers.includes('seatgeek_resale')) {
     const summary = await ingestSeatGeekProvider(options);
+    result.providers.push(summary);
+  }
+
+  if (providers.includes('predicthq_events')) {
+    const summary = await ingestPredictHQProvider(options);
     result.providers.push(summary);
   }
 

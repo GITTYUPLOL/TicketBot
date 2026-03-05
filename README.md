@@ -193,6 +193,7 @@ TICKETMASTER_MAX_PAGES=10
 TICKETMASTER_PAGE_SIZE=200
 TICKETMASTER_DAYS_AHEAD=45
 SEATGEEK_CLIENT_ID=<optional-for-real-resale-market-data>
+PREDICTHQ_ACCESS_TOKEN=<optional-for-broad-cross-category-event-feed>
 ```
 
 Run one-time live sync (from `backend/`):

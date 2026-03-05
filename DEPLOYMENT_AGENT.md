@@ -66,6 +66,8 @@ cd /opt/ticketbot/frontend && npm ci && npm run build
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3001
+TICKETMASTER_API_KEY=<set-if-available>
+PREDICTHQ_ACCESS_TOKEN=<set-if-available>
 ```
 
 `/etc/ticketbot/frontend.env`

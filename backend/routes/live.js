@@ -13,7 +13,7 @@ function envNumber(name, fallback) {
 }
 
 const DEFAULT_SYNC_TTL_MINUTES = envNumber('LIVE_SYNC_TTL_MINUTES', 30);
-const DEFAULT_MAX_PAGES = envNumber('TICKETMASTER_MAX_PAGES', 12);
+const DEFAULT_MAX_PAGES = envNumber('TICKETMASTER_MAX_PAGES', 5);
 const DEFAULT_DAYS_AHEAD = envNumber('TICKETMASTER_DAYS_AHEAD', 60);
 
 function clamp(value, min, max) {
@@ -72,6 +72,7 @@ function buildIngestOptions(req) {
     segmentNames,
     ticketmasterApiKey: payload.ticketmaster_api_key,
     seatgeekClientId: payload.seatgeek_client_id,
+    predictHqToken: payload.predicthq_access_token || payload.predicthq_token,
   };
 }
 
@@ -178,6 +179,13 @@ router.get('/providers', (_req, res) => {
         required_env: ['SEATGEEK_CLIENT_ID'],
         market_type: 'resale',
         notes: ['Real resale market coverage when SeatGeek API client id is configured'],
+      },
+      {
+        name: 'predicthq_events',
+        configured: Boolean(process.env.PREDICTHQ_ACCESS_TOKEN),
+        required_env: ['PREDICTHQ_ACCESS_TOKEN'],
+        market_type: 'signal',
+        notes: ['Broad cross-category event feed (sports, concerts, festivals, performing arts, community)'],
       },
     ],
   });
